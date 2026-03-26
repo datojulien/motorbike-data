@@ -1,11 +1,12 @@
 from datetime import date, timedelta
-import math
+from pathlib import Path
 
 import gspread
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import hmac
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
@@ -18,11 +19,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-
-import hmac
-import streamlit as st
-
 def pin_gate():
+    if "app_pin" not in st.secrets:
+        st.error("Missing `app_pin` in Streamlit secrets. Add it before deploying the app.")
+        st.stop()
+
+    expected_pin = str(st.secrets["app_pin"])
     st.session_state.setdefault("pin_status", "locked")
     st.session_state.setdefault("pin_buffer", "")
 
@@ -45,7 +47,7 @@ def pin_gate():
 
     def check_pin():
         entered = st.session_state.pin_buffer
-        if len(entered) == 4 and hmac.compare_digest(entered, st.secrets["app_pin"]):
+        if len(entered) == 4 and hmac.compare_digest(entered, expected_pin):
             st.session_state.pin_status = "verified"
         else:
             st.session_state.pin_status = "incorrect"
@@ -170,6 +172,7 @@ PUBLIC_CSV_URL = (
     "2PACX-1vQtOfkiFAYIV9uubiLi8RAmMSj5mKDBxY9iEeOCGXjN5p7TVjPbmGOdSA-pIpDeC1ajS-y0yVDwAJ1m/"
     "pub?gid=1859833030&single=true&output=csv"
 )
+LOCAL_CSV_PATH = Path("mt25_fuel_log.csv")
 
 EDIT_SHEET_URL = st.secrets["google_sheet_edit_url"] if "google_sheet_edit_url" in st.secrets else ""
 WORKSHEET_NAME = st.secrets["worksheet_name"] if "worksheet_name" in st.secrets else "Sheet1"
@@ -438,6 +441,12 @@ def _card_insight(title: str, body: str) -> None:
     )
 
 
+def _fmt_number(value: float, spec: str, fallback: str = "--") -> str:
+    if pd.isna(value) or not np.isfinite(value):
+        return fallback
+    return format(float(value), spec)
+
+
 def _norm_full_tank(value: object) -> bool:
     text = str(value).strip().lower()
     return text in {"yes", "y", "true", "1", "full"}
@@ -507,40 +516,133 @@ def load_data(url: str) -> pd.DataFrame:
     for col in ["trip_km", "liters", "cost_rm", "price_per_l"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    valid_numeric = (
+        df["trip_km"].gt(0)
+        & df["liters"].gt(0)
+        & df["cost_rm"].gt(0)
+        & df["price_per_l"].gt(0)
+    )
+    dropped_invalid_rows = int((~valid_numeric).sum())
+
     df["full_tank_flag"] = df["full_tank"].map(_norm_full_tank)
     df["full_tank_label"] = np.where(df["full_tank_flag"], "Full", "Partial")
 
     df = (
         df.dropna(subset=["date", "trip_km", "liters", "cost_rm", "price_per_l"])
+        .loc[valid_numeric]
         .sort_values("date")
         .reset_index(drop=True)
     )
 
-    df["consumption_l_100"] = (df["liters"] / df["trip_km"]) * 100
-    df["cost_per_km"] = df["cost_rm"] / df["trip_km"]
-    df["km_per_l"] = df["trip_km"] / df["liters"]
+    if df.empty:
+        raise ValueError("No valid rows remain after cleaning the fuel log.")
 
-    df["days_since_prev"] = df["date"].diff().dt.days
-    df["daily_km"] = df["trip_km"] / df["days_since_prev"].replace(0, np.nan)
+    df["measurement_ready"] = False
+    df["measurement_trip_km"] = np.nan
+    df["measurement_liters"] = np.nan
+    df["measurement_cost_rm"] = np.nan
+    df["days_since_prev_full"] = np.nan
+    df["consumption_l_100"] = np.nan
+    df["cost_per_km"] = np.nan
+    df["km_per_l"] = np.nan
+    df["daily_km"] = np.nan
+    df["rolling_consumption"] = np.nan
+    df["rolling_cost_km"] = np.nan
+    df["efficiency_score"] = np.nan
+    df["is_anomaly"] = False
+
+    pending_trip_km = 0.0
+    pending_liters = 0.0
+    pending_cost_rm = 0.0
+    last_full_date = None
+
+    for idx, row in df.iterrows():
+        pending_trip_km += float(row["trip_km"])
+        pending_liters += float(row["liters"])
+        pending_cost_rm += float(row["cost_rm"])
+
+        if row["full_tank_flag"]:
+            df.at[idx, "measurement_ready"] = True
+            df.at[idx, "measurement_trip_km"] = pending_trip_km
+            df.at[idx, "measurement_liters"] = pending_liters
+            df.at[idx, "measurement_cost_rm"] = pending_cost_rm
+
+            if last_full_date is not None:
+                df.at[idx, "days_since_prev_full"] = (row["date"] - last_full_date).days
+
+            pending_trip_km = 0.0
+            pending_liters = 0.0
+            pending_cost_rm = 0.0
+            last_full_date = row["date"]
+
+    measurement_mask = df["measurement_ready"]
+    df.loc[measurement_mask, "consumption_l_100"] = (
+        df.loc[measurement_mask, "measurement_liters"] / df.loc[measurement_mask, "measurement_trip_km"]
+    ) * 100
+    df.loc[measurement_mask, "cost_per_km"] = (
+        df.loc[measurement_mask, "measurement_cost_rm"] / df.loc[measurement_mask, "measurement_trip_km"]
+    )
+    df.loc[measurement_mask, "km_per_l"] = (
+        df.loc[measurement_mask, "measurement_trip_km"] / df.loc[measurement_mask, "measurement_liters"]
+    )
+    df.loc[measurement_mask, "daily_km"] = (
+        df.loc[measurement_mask, "measurement_trip_km"]
+        / df.loc[measurement_mask, "days_since_prev_full"].replace(0, np.nan)
+    )
 
     df["year"] = df["date"].dt.year.astype(str)
     df["month"] = df["date"].dt.to_period("M").astype(str)
 
-    df["rolling_consumption"] = df["consumption_l_100"].rolling(3, min_periods=1).mean()
-    df["rolling_cost_km"] = df["cost_per_km"].rolling(3, min_periods=1).mean()
+    if measurement_mask.any():
+        df.loc[measurement_mask, "rolling_consumption"] = (
+            df.loc[measurement_mask, "consumption_l_100"].rolling(3, min_periods=1).mean().to_numpy()
+        )
+        df.loc[measurement_mask, "rolling_cost_km"] = (
+            df.loc[measurement_mask, "cost_per_km"].rolling(3, min_periods=1).mean().to_numpy()
+        )
 
-    # Stable score: 100 is very efficient, 55 is heavy
-    score = 100 - ((df["consumption_l_100"] - 3.6) * 22)
-    df["efficiency_score"] = score.clip(55, 100)
+        # Stable score: 100 is very efficient, 55 is heavy
+        score = 100 - ((df.loc[measurement_mask, "consumption_l_100"] - 3.6) * 22)
+        df.loc[measurement_mask, "efficiency_score"] = score.clip(55, 100).to_numpy()
 
-    q1 = df["consumption_l_100"].quantile(0.25)
-    q3 = df["consumption_l_100"].quantile(0.75)
-    iqr = q3 - q1
-    low = q1 - 1.5 * iqr
-    high = q3 + 1.5 * iqr
-    df["is_anomaly"] = (df["consumption_l_100"] < low) | (df["consumption_l_100"] > high)
+        measured_consumption = df.loc[measurement_mask, "consumption_l_100"]
+        q1 = measured_consumption.quantile(0.25)
+        q3 = measured_consumption.quantile(0.75)
+        iqr = q3 - q1
+        low = q1 - 1.5 * iqr
+        high = q3 + 1.5 * iqr
+        df.loc[measurement_mask, "is_anomaly"] = (
+            (measured_consumption < low) | (measured_consumption > high)
+        ).to_numpy()
+
+    df.attrs["dropped_invalid_rows"] = dropped_invalid_rows
 
     return df
+
+
+def load_primary_data() -> tuple[pd.DataFrame, str, list[str]]:
+    attempts = [
+        ("Published Google Sheet CSV", PUBLIC_CSV_URL),
+        ("Local CSV backup", str(LOCAL_CSV_PATH)),
+    ]
+    errors = []
+
+    for index, (label, source) in enumerate(attempts):
+        try:
+            df = load_data(source)
+            notices = []
+            dropped_invalid_rows = int(df.attrs.get("dropped_invalid_rows", 0))
+            if dropped_invalid_rows:
+                notices.append(
+                    f"Ignored {dropped_invalid_rows} row(s) with missing or non-positive numeric values."
+                )
+            if index > 0:
+                notices.insert(0, "Published Google Sheet CSV is unavailable, so the dashboard is using the local backup file.")
+            return df, label, notices
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+
+    raise RuntimeError(" | ".join(errors))
 
 
 def apply_window(df: pd.DataFrame, window: str) -> pd.DataFrame:
@@ -564,29 +666,57 @@ def build_monthly(df: pd.DataFrame) -> pd.DataFrame:
             avg_consumption=("consumption_l_100", "mean"),
             avg_cost_per_km=("cost_per_km", "mean"),
             entries=("date", "count"),
+            measured_trip_km=("measurement_trip_km", "sum"),
+            measured_liters=("measurement_liters", "sum"),
         )
     )
-    monthly["km_per_l"] = monthly["trip_km"] / monthly["liters"]
+    monthly["km_per_l"] = monthly["measured_trip_km"] / monthly["measured_liters"]
     return monthly
 
 
-def predict_refill(df: pd.DataFrame, tank_capacity_l: float) -> dict:
+def predict_refill(df: pd.DataFrame, latest_entry: pd.Series, tank_capacity_l: float) -> dict:
+    if not bool(latest_entry["full_tank_flag"]):
+        return {
+            "range_km": np.nan,
+            "remaining_km": np.nan,
+            "days_left": np.nan,
+            "date": None,
+            "reason": "Latest entry is a partial refill",
+        }
+
     avg_cons = df["consumption_l_100"].tail(min(4, len(df))).mean()
-    latest_trip = float(df.iloc[-1]["trip_km"])
 
     if pd.isna(avg_cons) or avg_cons <= 0:
-        return {"range_km": np.nan, "remaining_km": np.nan, "days_left": np.nan, "date": None}
+        return {
+            "range_km": np.nan,
+            "remaining_km": np.nan,
+            "days_left": np.nan,
+            "date": None,
+            "reason": "Need more complete tanks",
+        }
 
     est_range = tank_capacity_l / avg_cons * 100
-    remaining_km = max(est_range - latest_trip, 0)
+    remaining_km = est_range
 
     pace = df["daily_km"].dropna().tail(5).mean()
     if pd.isna(pace) or pace <= 0:
-        return {"range_km": est_range, "remaining_km": remaining_km, "days_left": np.nan, "date": None}
+        return {
+            "range_km": est_range,
+            "remaining_km": remaining_km,
+            "days_left": np.nan,
+            "date": None,
+            "reason": "Need more pace data",
+        }
 
     days_left = remaining_km / pace
-    next_date = df.iloc[-1]["date"] + timedelta(days=float(days_left))
-    return {"range_km": est_range, "remaining_km": remaining_km, "days_left": days_left, "date": next_date}
+    next_date = latest_entry["date"] + timedelta(days=float(days_left))
+    return {
+        "range_km": est_range,
+        "remaining_km": remaining_km,
+        "days_left": days_left,
+        "date": next_date,
+        "reason": "",
+    }
 
 
 def classify_efficiency(avg_cons: float) -> tuple[str, str]:
@@ -638,7 +768,11 @@ def generate_tips(df: pd.DataFrame, latest_price: float) -> list[str]:
 # =========================================================
 # LOAD DATA
 # =========================================================
-df_all = load_data(PUBLIC_CSV_URL)
+try:
+    df_all, data_source_label, data_notices = load_primary_data()
+except Exception as exc:
+    st.error(f"Could not load dashboard data: {exc}")
+    st.stop()
 
 # =========================================================
 # COMMAND DECK
@@ -718,7 +852,10 @@ with action2:
         st.rerun()
 
 with action3:
-    st.caption("Blackline mode: clean telemetry, forecasting, and live Google Sheets logging.")
+    st.caption(f"Data source: {data_source_label}. Blackline mode: clean telemetry, forecasting, and live Google Sheets logging.")
+
+for notice in data_notices:
+    st.warning(notice)
 
 # =========================================================
 # FILTER DATA
@@ -736,16 +873,21 @@ if df.empty:
     st.stop()
 
 monthly = build_monthly(df)
-latest = df.iloc[-1]
-best = df.loc[df["consumption_l_100"].idxmin()]
-worst = df.loc[df["consumption_l_100"].idxmax()]
-pred = predict_refill(df, tank_capacity)
+latest_entry = df.iloc[-1]
+analysis_df = df[df["measurement_ready"]].copy()
 
-avg_cons = df["consumption_l_100"].mean()
-avg_cost_km = df["cost_per_km"].mean()
-avg_km_l = df["km_per_l"].mean()
-eff_score = df["efficiency_score"].mean()
-latest_price = float(latest["price_per_l"])
+if analysis_df.empty:
+    st.error("This selection has no completed full-tank cycles yet, so telemetry metrics cannot be calculated.")
+    st.stop()
+
+latest = analysis_df.iloc[-1]
+pred = predict_refill(analysis_df, latest_entry, tank_capacity)
+
+avg_cons = analysis_df["consumption_l_100"].mean()
+avg_cost_km = analysis_df["cost_per_km"].mean()
+avg_km_l = analysis_df["km_per_l"].mean()
+eff_score = analysis_df["efficiency_score"].mean()
+latest_price = float(latest_entry["price_per_l"])
 status_label, status_class = classify_efficiency(avg_cons)
 
 total_spent = df["cost_rm"].sum()
@@ -758,7 +900,7 @@ liters_per_month_est = (total_liters / days_span) * 30.44
 future_price = 3.87
 future_monthly_cost = liters_per_month_est * future_price
 
-tips = generate_tips(df, latest_price)
+tips = generate_tips(analysis_df, latest_price)
 
 # =========================================================
 # HERO
@@ -775,7 +917,7 @@ st.markdown(
         <div class="pillbar">
             <span class="pill {status_class}">Efficiency: {status_label}</span>
             <span class="pill info">Latest fuel: RM {latest_price:.2f}/L</span>
-            <span class="pill">Entries: {len(df)}</span>
+            <span class="pill">Entries: {len(df)} | Completed tanks: {len(analysis_df)}</span>
             <span class="pill">Average: {avg_cons:.2f} L/100km</span>
         </div>
     </div>
@@ -800,12 +942,16 @@ with tab_overview:
     with m2:
         _card_metric("Average cost per km", f"RM {avg_cost_km:.3f}", f"Latest: RM {latest['cost_per_km']:.3f}/km")
     with m3:
-        _card_metric("Estimated tank range", f"{pred['range_km']:.0f} km", f"Remaining now: {pred['remaining_km']:.0f} km")
+        _card_metric(
+            "Estimated tank range",
+            f"{_fmt_number(pred['range_km'], '.0f')} km",
+            f"Remaining now: {_fmt_number(pred['remaining_km'], '.0f')} km",
+        )
     with m4:
         _card_metric("Estimated monthly spend", f"RM {monthly_spend_est:.0f}", f"What RM 3.87/L does: RM {future_monthly_cost:.0f}")
     with m5:
-        next_refill_text = pred["date"].strftime("%d %b %Y") if pred["date"] is not None else "Need more pace data"
-        next_refill_sub = f"In {pred['days_left']:.1f} days" if pd.notna(pred["days_left"]) else "Forecast still tentative"
+        next_refill_text = pred["date"].strftime("%d %b %Y") if pred["date"] is not None else "Forecast pending"
+        next_refill_sub = f"In {pred['days_left']:.1f} days" if pd.notna(pred["days_left"]) else pred["reason"]
         _card_metric("Predicted next refill", next_refill_text, next_refill_sub)
 
     c1, c2 = st.columns([1.35, 0.9])
@@ -817,8 +963,8 @@ with tab_overview:
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
-                x=df["date"],
-                y=df["consumption_l_100"],
+                x=analysis_df["date"],
+                y=analysis_df["consumption_l_100"],
                 mode="lines+markers",
                 name="Actual",
                 line=dict(width=3),
@@ -827,8 +973,8 @@ with tab_overview:
         )
         fig.add_trace(
             go.Scatter(
-                x=df["date"],
-                y=df["rolling_consumption"],
+                x=analysis_df["date"],
+                y=analysis_df["rolling_consumption"],
                 mode="lines",
                 name="3-tank rolling",
                 line=dict(width=2, dash="dot"),
@@ -868,7 +1014,7 @@ with tab_overview:
     with i1:
         _card_insight(
             "Latest tank verdict",
-            f"Your latest tank came in at <b>{latest['consumption_l_100']:.2f} L/100km</b>, "
+            f"Your latest completed tank came in at <b>{latest['consumption_l_100']:.2f} L/100km</b>, "
             f"versus an app average of <b>{avg_cons:.2f}</b>. "
             f"That is <b>{((latest['consumption_l_100'] / avg_cons) - 1) * 100:+.1f}%</b> versus your norm.",
         )
@@ -881,7 +1027,7 @@ with tab_overview:
         )
         _card_insight("Refill forecast", refill_sentence)
     with i3:
-        anomaly_count = int(df["is_anomaly"].sum())
+        anomaly_count = int(analysis_df["is_anomaly"].sum())
         _card_insight(
             "Anomaly watch",
             "No major anomalies detected. Your entries look coherent."
@@ -907,12 +1053,12 @@ with tab_trends:
         st.markdown('<div class="section-title">Trip length vs consumption</div>', unsafe_allow_html=True)
 
         scatter = px.scatter(
-            df,
-            x="trip_km",
+            analysis_df,
+            x="measurement_trip_km",
             y="consumption_l_100",
-            size="liters",
+            size="measurement_liters",
             color="is_anomaly",
-            hover_data=["date", "cost_rm", "price_per_l", "full_tank_label"],
+            hover_data=["date", "measurement_cost_rm", "price_per_l"],
             opacity=0.9,
         )
         scatter = make_plotly_layout(scatter, height=380)
@@ -926,7 +1072,7 @@ with tab_trends:
         st.markdown('<div class="section-title">Efficiency score timeline</div>', unsafe_allow_html=True)
 
         score_fig = px.area(
-            df,
+            analysis_df,
             x="date",
             y="efficiency_score",
         )
@@ -937,18 +1083,20 @@ with tab_trends:
     top_col, bottom_col = st.columns(2)
     with top_col:
         st.markdown('<div class="section-title">Top 5 most efficient tanks</div>', unsafe_allow_html=True)
-        top5 = df.sort_values("consumption_l_100", ascending=True)[
-            ["date", "trip_km", "liters", "cost_rm", "consumption_l_100", "efficiency_score"]
+        top5 = analysis_df.sort_values("consumption_l_100", ascending=True)[
+            ["date", "measurement_trip_km", "measurement_liters", "measurement_cost_rm", "consumption_l_100", "efficiency_score"]
         ].head(5).copy()
         top5["date"] = top5["date"].dt.strftime("%Y-%m-%d")
+        top5.columns = ["date", "trip_km", "liters", "cost_rm", "consumption_l_100", "efficiency_score"]
         st.dataframe(top5, use_container_width=True, hide_index=True)
 
     with bottom_col:
         st.markdown('<div class="section-title">5 heaviest tanks</div>', unsafe_allow_html=True)
-        bottom5 = df.sort_values("consumption_l_100", ascending=False)[
-            ["date", "trip_km", "liters", "cost_rm", "consumption_l_100", "efficiency_score"]
+        bottom5 = analysis_df.sort_values("consumption_l_100", ascending=False)[
+            ["date", "measurement_trip_km", "measurement_liters", "measurement_cost_rm", "consumption_l_100", "efficiency_score"]
         ].head(5).copy()
         bottom5["date"] = bottom5["date"].dt.strftime("%Y-%m-%d")
+        bottom5.columns = ["date", "trip_km", "liters", "cost_rm", "consumption_l_100", "efficiency_score"]
         st.dataframe(bottom5, use_container_width=True, hide_index=True)
 
 # =========================================================
