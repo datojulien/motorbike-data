@@ -23,42 +23,144 @@ import hmac
 import streamlit as st
 
 def pin_gate():
-    st.session_state.pin_status = st.session_state.get("pin_status", "locked")
+    st.session_state.setdefault("pin_status", "locked")
+    st.session_state.setdefault("pin_buffer", "")
+
+    def press_digit(digit: str):
+        if len(st.session_state.pin_buffer) < 4:
+            st.session_state.pin_buffer += digit
+
+        if len(st.session_state.pin_buffer) == 4:
+            check_pin()
+
+    def clear_pin():
+        st.session_state.pin_buffer = ""
+        if st.session_state.pin_status == "incorrect":
+            st.session_state.pin_status = "locked"
+
+    def backspace():
+        st.session_state.pin_buffer = st.session_state.pin_buffer[:-1]
+        if st.session_state.pin_status == "incorrect":
+            st.session_state.pin_status = "locked"
 
     def check_pin():
-        entered = st.session_state.pin_input.strip()
-
-        # must be exactly 4 digits
-        if len(entered) != 4 or not entered.isdigit():
-            st.session_state.pin_status = "incorrect"
-        elif hmac.compare_digest(entered, st.secrets["app_pin"]):
+        entered = st.session_state.pin_buffer
+        if len(entered) == 4 and hmac.compare_digest(entered, st.secrets["app_pin"]):
             st.session_state.pin_status = "verified"
         else:
             st.session_state.pin_status = "incorrect"
+        st.session_state.pin_buffer = ""
 
-        # clear the field after each attempt
-        st.session_state.pin_input = ""
-
-    def logout():
+    def lock_page():
         st.session_state.pin_status = "locked"
+        st.session_state.pin_buffer = ""
 
     if st.session_state.pin_status != "verified":
-        st.markdown("## 🔐 Enter PIN")
-        st.text_input(
-            "4-digit PIN",
-            key="pin_input",
-            type="password",
-            max_chars=4,
-            on_change=check_pin,
+        st.markdown(
+            """
+            <style>
+            .pin-shell {
+                max-width: 360px;
+                margin: 4rem auto 0 auto;
+                padding: 1.5rem 1.2rem 1.2rem 1.2rem;
+                border-radius: 28px;
+                background: rgba(15, 23, 42, 0.72);
+                border: 1px solid rgba(255,255,255,0.08);
+                box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+                backdrop-filter: blur(14px);
+                text-align: center;
+            }
+            .pin-title {
+                font-size: 1.5rem;
+                font-weight: 800;
+                color: white;
+                margin-bottom: 0.25rem;
+            }
+            .pin-sub {
+                color: #94a3b8;
+                font-size: 0.95rem;
+                margin-bottom: 1rem;
+            }
+            .pin-dots {
+                display: flex;
+                justify-content: center;
+                gap: 12px;
+                margin: 0.8rem 0 1.2rem 0;
+            }
+            .pin-dot {
+                width: 16px;
+                height: 16px;
+                border-radius: 999px;
+                background: rgba(255,255,255,0.14);
+                border: 1px solid rgba(255,255,255,0.08);
+            }
+            .pin-dot.filled {
+                background: #67e8f9;
+                box-shadow: 0 0 18px rgba(103,232,249,0.45);
+            }
+            div[data-testid="stButton"] > button {
+                width: 72px !important;
+                height: 72px !important;
+                border-radius: 999px !important;
+                font-size: 1.35rem !important;
+                font-weight: 700 !important;
+                margin: 0.15rem auto !important;
+                border: 1px solid rgba(255,255,255,0.08) !important;
+                background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.98)) !important;
+                color: white !important;
+                box-shadow: 0 10px 28px rgba(0,0,0,0.22) !important;
+            }
+            div[data-testid="stButton"] > button:hover {
+                border-color: rgba(103,232,249,0.35) !important;
+                color: #67e8f9 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        entered_len = len(st.session_state.pin_buffer)
+        dots = "".join(
+            f'<div class="pin-dot {"filled" if i < entered_len else ""}"></div>'
+            for i in range(4)
+        )
+
+        st.markdown(
+            f"""
+            <div class="pin-shell">
+                <div class="pin-title">🔐 Enter PIN</div>
+                <div class="pin-sub">4-digit access code</div>
+                <div class="pin-dots">{dots}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         if st.session_state.pin_status == "incorrect":
             st.error("Incorrect PIN")
 
+        rows = [
+            ["1", "2", "3"],
+            ["4", "5", "6"],
+            ["7", "8", "9"],
+            ["C", "0", "⌫"],
+        ]
+
+        for row_index, row in enumerate(rows):
+            cols = st.columns(3)
+            for col, label in zip(cols, row):
+                with col:
+                    key = f"pin_btn_{row_index}_{label}"
+                    if label == "C":
+                        st.button(label, key=key, on_click=clear_pin, use_container_width=True)
+                    elif label == "⌫":
+                        st.button(label, key=key, on_click=backspace, use_container_width=True)
+                    else:
+                        st.button(label, key=key, on_click=press_digit, args=(label,), use_container_width=True)
+
         st.stop()
 
-    # optional small logout button once unlocked
-    st.button("Lock page", on_click=logout)
+    st.button("Lock page", on_click=lock_page, key="lock_page_btn")
 
 
 pin_gate()
