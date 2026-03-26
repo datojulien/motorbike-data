@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import gspread
 import numpy as np
@@ -173,6 +174,7 @@ PUBLIC_CSV_URL = (
     "pub?gid=1859833030&single=true&output=csv"
 )
 LOCAL_CSV_PATH = Path("mt25_fuel_log.csv")
+APP_TIMEZONE = st.secrets["app_timezone"] if "app_timezone" in st.secrets else "Asia/Kuala_Lumpur"
 
 EDIT_SHEET_URL = st.secrets["google_sheet_edit_url"] if "google_sheet_edit_url" in st.secrets else ""
 WORKSHEET_NAME = st.secrets["worksheet_name"] if "worksheet_name" in st.secrets else "Sheet1"
@@ -447,6 +449,10 @@ def _fmt_number(value: float, spec: str, fallback: str = "--") -> str:
     return format(float(value), spec)
 
 
+def _now_local() -> datetime:
+    return datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None)
+
+
 def _norm_full_tank(value: object) -> bool:
     text = str(value).strip().lower()
     return text in {"yes", "y", "true", "1", "full"}
@@ -696,26 +702,35 @@ def predict_refill(df: pd.DataFrame, latest_entry: pd.Series, tank_capacity_l: f
         }
 
     est_range = tank_capacity_l / avg_cons * 100
-    remaining_km = est_range
 
     pace = df["daily_km"].dropna().tail(5).mean()
     if pd.isna(pace) or pace <= 0:
         return {
             "range_km": est_range,
-            "remaining_km": remaining_km,
+            "remaining_km": est_range,
             "days_left": np.nan,
             "date": None,
             "reason": "Need more pace data",
         }
 
-    days_left = remaining_km / pace
-    next_date = latest_entry["date"] + timedelta(days=float(days_left))
+    refill_at = latest_entry["date"].to_pydatetime()
+    now_local = _now_local()
+    total_days_to_refill = est_range / pace
+    next_date = refill_at + timedelta(days=float(total_days_to_refill))
+    elapsed_days = max((now_local - refill_at).total_seconds() / 86400, 0.0)
+    remaining_km = max(est_range - (pace * elapsed_days), 0.0)
+    days_left = max((next_date - now_local).total_seconds() / 86400, 0.0)
+
+    reason = ""
+    if days_left == 0.0:
+        reason = "Forecast says refill is due now"
+
     return {
         "range_km": est_range,
         "remaining_km": remaining_km,
         "days_left": days_left,
         "date": next_date,
-        "reason": "",
+        "reason": reason,
     }
 
 
@@ -951,7 +966,12 @@ with tab_overview:
         _card_metric("Estimated monthly spend", f"RM {monthly_spend_est:.0f}", f"What RM 3.87/L does: RM {future_monthly_cost:.0f}")
     with m5:
         next_refill_text = pred["date"].strftime("%d %b %Y") if pred["date"] is not None else "Forecast pending"
-        next_refill_sub = f"In {pred['days_left']:.1f} days" if pd.notna(pred["days_left"]) else pred["reason"]
+        if pred["reason"]:
+            next_refill_sub = pred["reason"]
+        elif pd.notna(pred["days_left"]):
+            next_refill_sub = f"In {pred['days_left']:.1f} days"
+        else:
+            next_refill_sub = "Forecast still tentative"
         _card_metric("Predicted next refill", next_refill_text, next_refill_sub)
 
     c1, c2 = st.columns([1.35, 0.9])
