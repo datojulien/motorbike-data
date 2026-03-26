@@ -200,6 +200,9 @@ st.markdown(
         --amber: #fbbf24;
         --rose: #fb7185;
         --green: #34d399;
+        --button-bg: linear-gradient(180deg, rgba(22, 36, 57, 0.96), rgba(11, 19, 34, 0.98));
+        --button-bg-hover: linear-gradient(180deg, rgba(31, 48, 74, 0.98), rgba(14, 25, 42, 1));
+        --button-bg-active: linear-gradient(180deg, rgba(54, 90, 132, 0.96), rgba(23, 41, 68, 1));
         --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
     }
 
@@ -394,10 +397,73 @@ st.markdown(
         border: 1px solid rgba(255,255,255,0.06);
     }
 
-    div[data-testid="stPopover"] > div button,
     div[data-testid="stButton"] > button,
-    div[data-testid="baseButton-secondary"] {
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stPopover"] button,
+    button[kind="secondary"],
+    button[kind="tertiary"] {
+        background: var(--button-bg) !important;
+        color: var(--text) !important;
+        border: 1px solid rgba(148, 163, 184, 0.22) !important;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22) !important;
+        transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease;
+    }
+
+    div[data-testid="stButton"] > button,
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stPopover"] button,
+    button[kind="secondary"],
+    button[kind="tertiary"] {
         border-radius: 14px !important;
+    }
+
+    div[data-testid="stButton"] > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover,
+    div[data-testid="stPopover"] button:hover,
+    button[kind="secondary"]:hover,
+    button[kind="tertiary"]:hover {
+        background: var(--button-bg-hover) !important;
+        color: #ffffff !important;
+        border-color: rgba(103, 232, 249, 0.38) !important;
+        transform: translateY(-1px);
+    }
+
+    div[data-testid="stButton"] > button:focus-visible,
+    div[data-testid="stDownloadButton"] > button:focus-visible,
+    div[data-testid="stPopover"] button:focus-visible,
+    button[kind="secondary"]:focus-visible,
+    button[kind="tertiary"]:focus-visible {
+        outline: 2px solid rgba(103, 232, 249, 0.75) !important;
+        outline-offset: 2px !important;
+    }
+
+    div[data-testid="stButton"] > button:disabled,
+    div[data-testid="stDownloadButton"] > button:disabled,
+    div[data-testid="stPopover"] button:disabled,
+    button[kind="secondary"]:disabled,
+    button[kind="tertiary"]:disabled {
+        color: rgba(226, 232, 240, 0.45) !important;
+        background: linear-gradient(180deg, rgba(20, 27, 38, 0.85), rgba(12, 17, 28, 0.88)) !important;
+        border-color: rgba(148, 163, 184, 0.10) !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+
+    div[data-testid="stSegmentedControl"] button {
+        color: #d6e2f0 !important;
+        border-radius: 11px !important;
+        min-height: 2.5rem;
+    }
+
+    div[data-testid="stSegmentedControl"] button[aria-pressed="true"] {
+        background: var(--button-bg-active) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(103, 232, 249, 0.28) !important;
+    }
+
+    div[data-testid="stSegmentedControl"] button[aria-pressed="false"] {
+        background: transparent !important;
+        color: #cbd5e1 !important;
     }
 
     div[data-testid="stDataFrame"] {
