@@ -19,6 +19,50 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+import hmac
+import streamlit as st
+
+def pin_gate():
+    st.session_state.pin_status = st.session_state.get("pin_status", "locked")
+
+    def check_pin():
+        entered = st.session_state.pin_input.strip()
+
+        # must be exactly 4 digits
+        if len(entered) != 4 or not entered.isdigit():
+            st.session_state.pin_status = "incorrect"
+        elif hmac.compare_digest(entered, st.secrets["app_pin"]):
+            st.session_state.pin_status = "verified"
+        else:
+            st.session_state.pin_status = "incorrect"
+
+        # clear the field after each attempt
+        st.session_state.pin_input = ""
+
+    def logout():
+        st.session_state.pin_status = "locked"
+
+    if st.session_state.pin_status != "verified":
+        st.markdown("## 🔐 Enter PIN")
+        st.text_input(
+            "4-digit PIN",
+            key="pin_input",
+            type="password",
+            max_chars=4,
+            on_change=check_pin,
+        )
+
+        if st.session_state.pin_status == "incorrect":
+            st.error("Incorrect PIN")
+
+        st.stop()
+
+    # optional small logout button once unlocked
+    st.button("Lock page", on_click=logout)
+
+
+pin_gate()
+
 PUBLIC_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vQtOfkiFAYIV9uubiLi8RAmMSj5mKDBxY9iEeOCGXjN5p7TVjPbmGOdSA-pIpDeC1ajS-y0yVDwAJ1m/"
