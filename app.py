@@ -178,6 +178,9 @@ APP_TIMEZONE = st.secrets["app_timezone"] if "app_timezone" in st.secrets else "
 
 EDIT_SHEET_URL = st.secrets["google_sheet_edit_url"] if "google_sheet_edit_url" in st.secrets else ""
 WORKSHEET_NAME = st.secrets["worksheet_name"] if "worksheet_name" in st.secrets else "Sheet1"
+MAINTENANCE_WORKSHEET_NAME = (
+    st.secrets["maintenance_worksheet_name"] if "maintenance_worksheet_name" in st.secrets else "maintenance_log"
+)
 
 # =========================================================
 # STYLE
@@ -554,6 +557,15 @@ def _norm_full_tank(value: object) -> bool:
     return text in {"yes", "y", "true", "1", "full"}
 
 
+def _norm_service_type(value: object) -> str:
+    return str(value).strip().lower().replace("-", " ").replace("_", " ")
+
+
+def _is_oil_service(value: object) -> bool:
+    text = _norm_service_type(value)
+    return any(token in text for token in {"oil", "engine oil"})
+
+
 @st.cache_resource
 def get_gsheet_client():
     if "gcp_service_account" not in st.secrets:
@@ -745,6 +757,87 @@ def load_primary_data() -> tuple[pd.DataFrame, str, list[str]]:
             errors.append(f"{label}: {exc}")
 
     raise RuntimeError(" | ".join(errors))
+
+
+@st.cache_data(ttl=180)
+def load_maintenance_data() -> tuple[pd.DataFrame, str]:
+    empty = pd.DataFrame(
+        columns=["date", "odo_km", "service_type", "details", "interval_km", "interval_days"]
+    )
+
+    client = get_gsheet_client()
+    if client is None or not EDIT_SHEET_URL:
+        return empty, "No Google Sheets write access configured"
+
+    try:
+        workbook = client.open_by_url(EDIT_SHEET_URL)
+        worksheet = workbook.worksheet(MAINTENANCE_WORKSHEET_NAME)
+    except Exception as exc:
+        return empty, f"Could not read `{MAINTENANCE_WORKSHEET_NAME}`: {exc}"
+
+    records = worksheet.get_all_records()
+    if not records:
+        return empty, f"`{MAINTENANCE_WORKSHEET_NAME}` is empty"
+
+    df = pd.DataFrame(records)
+    df.columns = df.columns.str.strip().str.lower()
+
+    if "date" not in df.columns or "service_type" not in df.columns:
+        return empty, f"`{MAINTENANCE_WORKSHEET_NAME}` needs at least `date` and `service_type` columns"
+
+    if "odo_km" not in df.columns:
+        df["odo_km"] = np.nan
+    if "details" not in df.columns:
+        df["details"] = ""
+    if "interval_km" not in df.columns:
+        df["interval_km"] = np.nan
+    if "interval_days" not in df.columns:
+        df["interval_days"] = np.nan
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    for col in ["odo_km", "interval_km", "interval_days"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = (
+        df.dropna(subset=["date", "service_type"])
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
+
+    return df[["date", "odo_km", "service_type", "details", "interval_km", "interval_days"]], "Loaded from maintenance log"
+
+
+def get_latest_oil_service(maintenance_df: pd.DataFrame) -> pd.Series | None:
+    if maintenance_df.empty:
+        return None
+
+    oil_rows = maintenance_df[maintenance_df["service_type"].map(_is_oil_service)].copy()
+    if oil_rows.empty:
+        return None
+    return oil_rows.sort_values("date").iloc[-1]
+
+
+def compute_km_since_service(fuel_df: pd.DataFrame, service_date: date, service_odo_km: float) -> tuple[float, str]:
+    service_ts = pd.Timestamp(service_date)
+    future_fills = fuel_df[fuel_df["date"] >= service_ts].sort_values("date").copy()
+
+    if future_fills.empty:
+        return 0.0, "No completed refuel has been logged since that service date yet."
+
+    first_fill = future_fills.iloc[0]
+    first_cycle_distance = float(first_fill["trip_km"])
+
+    if pd.isna(service_odo_km):
+        km_after_service_in_first_cycle = first_cycle_distance
+        note = "Maintenance log is missing `odo_km`, so the first post-service tank is counted in full."
+    else:
+        km_after_service_in_first_cycle = max(first_cycle_distance - float(service_odo_km), 0.0)
+        note = (
+            "Distance since service is measured from the maintenance log `odo_km` inside the active fuel cycle."
+        )
+
+    later_km = float(future_fills.iloc[1:]["trip_km"].sum())
+    return km_after_service_in_first_cycle + later_km, note
 
 
 def apply_window(df: pd.DataFrame, window: str) -> pd.DataFrame:
@@ -1043,6 +1136,8 @@ future_price = 3.87
 future_monthly_cost = liters_per_month_est * future_price
 
 tips = generate_tips(analysis_df, latest_price)
+maintenance_df, maintenance_source_status = load_maintenance_data()
+latest_oil_service = get_latest_oil_service(maintenance_df)
 
 today_local = _now_local().date()
 latest_log_date = df_all["date"].max().date()
@@ -1060,12 +1155,29 @@ st.session_state.setdefault(
     _secret_int("oil_interval_days", 180),
 )
 
-oil_change_date = st.session_state["oil_change_date"]
 oil_interval_km = max(float(st.session_state["oil_interval_km"]), 100.0)
 oil_interval_days = max(int(st.session_state["oil_interval_days"]), 30)
+oil_source_label = "Manual settings"
+oil_service_note = "Using manual oil tracking settings."
 
-oil_change_ts = pd.Timestamp(oil_change_date)
-oil_km_since = float(df_all.loc[df_all["date"] > oil_change_ts, "trip_km"].sum())
+if latest_oil_service is not None:
+    oil_change_date = latest_oil_service["date"].date()
+    if pd.notna(latest_oil_service["interval_km"]):
+        oil_interval_km = max(float(latest_oil_service["interval_km"]), 100.0)
+    if pd.notna(latest_oil_service["interval_days"]):
+        oil_interval_days = max(int(latest_oil_service["interval_days"]), 30)
+
+    oil_km_since, oil_service_note = compute_km_since_service(
+        df_all,
+        oil_change_date,
+        latest_oil_service["odo_km"],
+    )
+    oil_source_label = "Maintenance log"
+else:
+    oil_change_date = st.session_state["oil_change_date"]
+    oil_change_ts = pd.Timestamp(oil_change_date)
+    oil_km_since = float(df_all.loc[df_all["date"] > oil_change_ts, "trip_km"].sum())
+
 oil_days_since = max((today_local - oil_change_date).days, 0)
 oil_km_left = oil_interval_km - oil_km_since
 oil_days_left = oil_interval_days - oil_days_since
@@ -1237,7 +1349,7 @@ with tab_overview:
     with service_cols[0]:
         _card_insight(
             "Oil status",
-            f"<b>{oil_status_label}</b><br>{oil_status_detail}",
+            f"<b>{oil_status_label}</b><br>{oil_status_detail}<br><span class=\"micro-note\">Source: {oil_source_label}</span>",
         )
     with service_cols[1]:
         km_line = (
@@ -1247,7 +1359,8 @@ with tab_overview:
         )
         _card_insight(
             "Distance interval",
-            f"{km_line}<br>Tracked since {oil_change_date.isoformat()}: <b>{oil_km_since:.0f} km</b>.",
+            f"{km_line}<br>Tracked since {oil_change_date.isoformat()}: <b>{oil_km_since:.0f} km</b>.<br>"
+            f"<span class=\"micro-note\">{oil_service_note}</span>",
         )
     with service_cols[2]:
         days_line = (
@@ -1381,30 +1494,54 @@ with tab_costs:
 with tab_maintenance:
     st.markdown('<div class="section-kicker">Service</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Oil change monitor</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="section-body">Set the last oil change date and your preferred service interval. '
-        'Distance is tracked from the fuel log, so this works best when the log covers all riding.</div>',
-        unsafe_allow_html=True,
+    body_text = (
+        "Oil changes are read from the maintenance worksheet when available. "
+        "Distance is tracked from the fuel log, so this works best when the log covers all riding."
     )
+    if latest_oil_service is None:
+        body_text = (
+            "No oil change entry was found in the maintenance worksheet yet, so the tracker is using manual fallback settings. "
+            "Distance is tracked from the fuel log, so this works best when the log covers all riding."
+        )
+    st.markdown(f'<div class="section-body">{body_text}</div>', unsafe_allow_html=True)
+    st.caption(f"Oil source: {oil_source_label}. Maintenance worksheet status: {maintenance_source_status}.")
 
-    setup1, setup2, setup3 = st.columns(3)
-    with setup1:
-        st.date_input("Last oil change", key="oil_change_date")
-    with setup2:
-        st.number_input(
-            "Oil interval (km)",
-            min_value=100.0,
-            step=100.0,
-            format="%.0f",
-            key="oil_interval_km",
-        )
-    with setup3:
-        st.number_input(
-            "Oil interval (days)",
-            min_value=30,
-            step=30,
-            key="oil_interval_days",
-        )
+    if latest_oil_service is None:
+        setup1, setup2, setup3 = st.columns(3)
+        with setup1:
+            st.date_input("Last oil change", key="oil_change_date")
+        with setup2:
+            st.number_input(
+                "Oil interval (km)",
+                min_value=100.0,
+                step=100.0,
+                format="%.0f",
+                key="oil_interval_km",
+            )
+        with setup3:
+            st.number_input(
+                "Oil interval (days)",
+                min_value=30,
+                step=30,
+                key="oil_interval_days",
+            )
+    else:
+        setup1, setup2 = st.columns(2)
+        with setup1:
+            st.number_input(
+                "Oil interval (km)",
+                min_value=100.0,
+                step=100.0,
+                format="%.0f",
+                key="oil_interval_km",
+            )
+        with setup2:
+            st.number_input(
+                "Oil interval (days)",
+                min_value=30,
+                step=30,
+                key="oil_interval_days",
+            )
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
@@ -1426,10 +1563,14 @@ with tab_maintenance:
 
     i1, i2, i3 = st.columns(3)
     with i1:
+        base_text = (
+            f"Last oil change is coming from <b>{oil_source_label}</b> on <b>{oil_change_date.strftime('%d %b %Y')}</b>."
+        )
+        if latest_oil_service is not None and pd.notna(latest_oil_service["odo_km"]):
+            base_text += f" Logged `odo_km` at service: <b>{latest_oil_service['odo_km']:.1f} km</b>."
         _card_insight(
             "Service baseline",
-            f"Last oil change is set to <b>{oil_change_date.strftime('%d %b %Y')}</b> with intervals of "
-            f"<b>{oil_interval_km:.0f} km</b> or <b>{oil_interval_days} days</b>, whichever comes first.",
+            f"{base_text}<br>Intervals: <b>{oil_interval_km:.0f} km</b> or <b>{oil_interval_days} days</b>, whichever comes first.",
         )
     with i2:
         km_due_sentence = (
@@ -1441,7 +1582,8 @@ with tab_maintenance:
     with i3:
         log_note = (
             f"Fuel log currently runs through <b>{latest_log_date.strftime('%d %b %Y')}</b>. "
-            f"If you have ridden since then, the tracked oil kilometers may be understated."
+            f"If you have ridden since then, the tracked oil kilometers may be understated. "
+            f"The maintenance log assumes `odo_km` means the trip reading inside the current fuel cycle when the service happened."
         )
         _card_insight("Tracking note", log_note)
 
