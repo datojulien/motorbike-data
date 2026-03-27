@@ -762,7 +762,7 @@ def load_primary_data() -> tuple[pd.DataFrame, str, list[str]]:
 @st.cache_data(ttl=180)
 def load_maintenance_data() -> tuple[pd.DataFrame, str]:
     empty = pd.DataFrame(
-        columns=["date", "odo_km", "service_type", "details", "interval_km", "interval_days"]
+        columns=["date", "odo_km", "service_type", "details", "warning_km", "due_km", "due_days"]
     )
 
     client = get_gsheet_client()
@@ -789,13 +789,15 @@ def load_maintenance_data() -> tuple[pd.DataFrame, str]:
         df["odo_km"] = np.nan
     if "details" not in df.columns:
         df["details"] = ""
-    if "interval_km" not in df.columns:
-        df["interval_km"] = np.nan
-    if "interval_days" not in df.columns:
-        df["interval_days"] = np.nan
+    if "warning_km" not in df.columns:
+        df["warning_km"] = np.nan
+    if "due_km" not in df.columns:
+        df["due_km"] = df["interval_km"] if "interval_km" in df.columns else np.nan
+    if "due_days" not in df.columns:
+        df["due_days"] = df["interval_days"] if "interval_days" in df.columns else np.nan
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    for col in ["odo_km", "interval_km", "interval_days"]:
+    for col in ["odo_km", "warning_km", "due_km", "due_days"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = (
@@ -804,7 +806,7 @@ def load_maintenance_data() -> tuple[pd.DataFrame, str]:
         .reset_index(drop=True)
     )
 
-    return df[["date", "odo_km", "service_type", "details", "interval_km", "interval_days"]], "Loaded from maintenance log"
+    return df[["date", "odo_km", "service_type", "details", "warning_km", "due_km", "due_days"]], "Loaded from maintenance log"
 
 
 def get_latest_oil_service(maintenance_df: pd.DataFrame) -> pd.Series | None:
@@ -931,25 +933,26 @@ def classify_efficiency(avg_cons: float) -> tuple[str, str]:
     return "Heavy", "warn"
 
 
-def classify_oil_service(km_left: float, days_left: int, interval_km: float, interval_days: int) -> tuple[str, str, str]:
+def classify_oil_service(
+    km_since: float,
+    warning_km: float,
+    due_km: float,
+    days_left: int | None,
+) -> tuple[str, str, str]:
     due_reasons = []
-    if km_left <= 0:
-        due_reasons.append("distance interval reached")
-    if days_left <= 0:
+    if km_since >= due_km:
+        due_reasons.append("distance limit reached")
+    if days_left is not None and days_left <= 0:
         due_reasons.append("time interval reached")
 
     if due_reasons:
         detail = " and ".join(due_reasons).capitalize() + "."
         return "Overdue", "warn", detail
 
-    km_warn = max(interval_km * 0.12, 250.0)
-    day_warn = max(int(interval_days * 0.12), 14)
+    if km_since >= warning_km:
+        return "Due soon", "info", "Early warning threshold reached. Plan the oil change soon."
 
-    if km_left <= km_warn and days_left <= day_warn:
-        return "Due soon", "info", "Both the distance and time windows are getting close."
-    if km_left <= km_warn:
-        return "Due soon", "info", "Distance interval is getting close."
-    if days_left <= day_warn:
+    if days_left is not None and days_left <= 30:
         return "Due soon", "info", "Time interval is getting close."
     return "On track", "good", "Oil service is comfortably inside the next maintenance window."
 
@@ -1147,25 +1150,32 @@ st.session_state.setdefault(
     _secret_date("oil_change_date", latest_log_date),
 )
 st.session_state.setdefault(
-    "oil_interval_km",
-    _secret_float("oil_interval_km", 3000.0),
+    "oil_warning_km",
+    _secret_float("oil_warning_km", 3000.0),
 )
 st.session_state.setdefault(
-    "oil_interval_days",
-    _secret_int("oil_interval_days", 180),
+    "oil_due_km",
+    _secret_float("oil_due_km", _secret_float("oil_interval_km", 4000.0)),
+)
+st.session_state.setdefault(
+    "oil_due_days",
+    _secret_int("oil_due_days", _secret_int("oil_interval_days", 180)),
 )
 
-oil_interval_km = max(float(st.session_state["oil_interval_km"]), 100.0)
-oil_interval_days = max(int(st.session_state["oil_interval_days"]), 30)
+oil_warning_km = max(float(st.session_state["oil_warning_km"]), 100.0)
+oil_due_km = max(float(st.session_state["oil_due_km"]), oil_warning_km + 100.0)
+oil_due_days = max(int(st.session_state["oil_due_days"]), 30)
 oil_source_label = "Manual settings"
 oil_service_note = "Using manual oil tracking settings."
 
 if latest_oil_service is not None:
     oil_change_date = latest_oil_service["date"].date()
-    if pd.notna(latest_oil_service["interval_km"]):
-        oil_interval_km = max(float(latest_oil_service["interval_km"]), 100.0)
-    if pd.notna(latest_oil_service["interval_days"]):
-        oil_interval_days = max(int(latest_oil_service["interval_days"]), 30)
+    if pd.notna(latest_oil_service["warning_km"]):
+        oil_warning_km = max(float(latest_oil_service["warning_km"]), 100.0)
+    if pd.notna(latest_oil_service["due_km"]):
+        oil_due_km = max(float(latest_oil_service["due_km"]), oil_warning_km + 100.0)
+    if pd.notna(latest_oil_service["due_days"]):
+        oil_due_days = max(int(latest_oil_service["due_days"]), 30)
 
     oil_km_since, oil_service_note = compute_km_since_service(
         df_all,
@@ -1179,24 +1189,38 @@ else:
     oil_km_since = float(df_all.loc[df_all["date"] > oil_change_ts, "trip_km"].sum())
 
 oil_days_since = max((today_local - oil_change_date).days, 0)
-oil_km_left = oil_interval_km - oil_km_since
-oil_days_left = oil_interval_days - oil_days_since
-oil_due_date = oil_change_date + timedelta(days=oil_interval_days)
+oil_warning_left = oil_warning_km - oil_km_since
+oil_km_left = oil_due_km - oil_km_since
+oil_days_left = oil_due_days - oil_days_since
+oil_due_date = oil_change_date + timedelta(days=oil_due_days)
 oil_status_label, oil_status_class, oil_status_detail = classify_oil_service(
-    oil_km_left,
+    oil_km_since,
+    oil_warning_km,
+    oil_due_km,
     oil_days_left,
-    oil_interval_km,
-    oil_interval_days,
+)
+oil_warning_date = predict_oil_due_date(
+    oil_warning_left,
+    analysis_df["daily_km"].dropna().tail(5).mean(),
+    _now_local(),
 )
 oil_km_due_date = predict_oil_due_date(
     oil_km_left,
     analysis_df["daily_km"].dropna().tail(5).mean(),
     _now_local(),
 )
-oil_next_trigger = min(
-    [d for d in [oil_km_due_date, datetime.combine(oil_due_date, datetime.min.time())] if d is not None],
-    default=None,
-)
+oil_next_trigger = None
+oil_next_trigger_label = "Need more pace data"
+trigger_candidates = []
+if oil_warning_left > 0 and oil_warning_date is not None:
+    trigger_candidates.append((oil_warning_date, "Predicted early warning"))
+elif oil_km_left > 0 and oil_km_due_date is not None:
+    trigger_candidates.append((oil_km_due_date, "Predicted change due"))
+
+trigger_candidates.append((datetime.combine(oil_due_date, datetime.min.time()), "Calendar trigger"))
+
+if trigger_candidates:
+    oil_next_trigger, oil_next_trigger_label = min(trigger_candidates, key=lambda item: item[0])
 
 # =========================================================
 # HERO
@@ -1352,25 +1376,25 @@ with tab_overview:
             f"<b>{oil_status_label}</b><br>{oil_status_detail}<br><span class=\"micro-note\">Source: {oil_source_label}</span>",
         )
     with service_cols[1]:
-        km_line = (
-            f"<b>{oil_km_left:.0f} km left</b>"
+        warn_line = (
+            f"<b>{oil_warning_left:.0f} km until warning</b>"
+            if oil_warning_left >= 0
+            else f"<b>{abs(oil_warning_left):.0f} km past warning</b>"
+        )
+        _card_insight(
+            "Early warning",
+            f"{warn_line}<br>Tracked since {oil_change_date.isoformat()}: <b>{oil_km_since:.0f} km</b>.<br>"
+            f"<span class=\"micro-note\">{oil_service_note}</span>",
+        )
+    with service_cols[2]:
+        due_line = (
+            f"<b>{oil_km_left:.0f} km until change</b>"
             if oil_km_left >= 0
             else f"<b>{abs(oil_km_left):.0f} km overdue</b>"
         )
         _card_insight(
-            "Distance interval",
-            f"{km_line}<br>Tracked since {oil_change_date.isoformat()}: <b>{oil_km_since:.0f} km</b>.<br>"
-            f"<span class=\"micro-note\">{oil_service_note}</span>",
-        )
-    with service_cols[2]:
-        days_line = (
-            f"<b>{oil_days_left} days left</b>"
-            if oil_days_left >= 0
-            else f"<b>{abs(oil_days_left)} days overdue</b>"
-        )
-        _card_insight(
-            "Time interval",
-            f"{days_line}<br>Due date: <b>{oil_due_date.strftime('%d %b %Y')}</b>.",
+            "Change due",
+            f"{due_line}<br>Calendar due: <b>{oil_due_date.strftime('%d %b %Y')}</b>.",
         )
 
 # =========================================================
@@ -1507,59 +1531,69 @@ with tab_maintenance:
     st.caption(f"Oil source: {oil_source_label}. Maintenance worksheet status: {maintenance_source_status}.")
 
     if latest_oil_service is None:
-        setup1, setup2, setup3 = st.columns(3)
+        setup1, setup2, setup3, setup4 = st.columns(4)
         with setup1:
             st.date_input("Last oil change", key="oil_change_date")
         with setup2:
             st.number_input(
-                "Oil interval (km)",
+                "Early warning (km)",
                 min_value=100.0,
                 step=100.0,
                 format="%.0f",
-                key="oil_interval_km",
+                key="oil_warning_km",
             )
         with setup3:
             st.number_input(
-                "Oil interval (days)",
+                "Change due (km)",
+                min_value=200.0,
+                step=100.0,
+                format="%.0f",
+                key="oil_due_km",
+            )
+        with setup4:
+            st.number_input(
+                "Calendar due (days)",
                 min_value=30,
                 step=30,
-                key="oil_interval_days",
+                key="oil_due_days",
             )
     else:
-        setup1, setup2 = st.columns(2)
+        setup1, setup2, setup3 = st.columns(3)
         with setup1:
             st.number_input(
-                "Oil interval (km)",
+                "Early warning (km)",
                 min_value=100.0,
                 step=100.0,
                 format="%.0f",
-                key="oil_interval_km",
+                key="oil_warning_km",
             )
         with setup2:
             st.number_input(
-                "Oil interval (days)",
+                "Change due (km)",
+                min_value=200.0,
+                step=100.0,
+                format="%.0f",
+                key="oil_due_km",
+            )
+        with setup3:
+            st.number_input(
+                "Calendar due (days)",
                 min_value=30,
                 step=30,
-                key="oil_interval_days",
+                key="oil_due_days",
             )
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         _card_metric("Oil service status", oil_status_label, oil_status_detail)
     with m2:
-        km_value = f"{oil_km_left:.0f} km" if oil_km_left >= 0 else f"{abs(oil_km_left):.0f} km overdue"
-        _card_metric("Distance remaining", km_value, f"Tracked since service: {oil_km_since:.0f} km")
+        _card_metric("Oil km since change", f"{oil_km_since:.0f} km", f"Service date: {oil_change_date.strftime('%d %b %Y')}")
     with m3:
-        day_value = f"{oil_days_left} days" if oil_days_left >= 0 else f"{abs(oil_days_left)} days overdue"
-        _card_metric("Time remaining", day_value, f"Due date: {oil_due_date.strftime('%d %b %Y')}")
+        warn_value = f"{oil_warning_left:.0f} km" if oil_warning_left >= 0 else f"{abs(oil_warning_left):.0f} km past"
+        _card_metric("Early warning", warn_value, f"Warning threshold: {oil_warning_km:.0f} km")
     with m4:
         next_trigger_text = oil_next_trigger.strftime("%d %b %Y") if oil_next_trigger is not None else "Need more pace data"
-        next_trigger_sub = (
-            "Predicted km trigger"
-            if oil_km_due_date is not None and oil_next_trigger == oil_km_due_date
-            else "Calendar trigger"
-        )
-        _card_metric("Next oil trigger", next_trigger_text, next_trigger_sub)
+        _card_metric("Next oil trigger", next_trigger_text, oil_next_trigger_label)
 
     i1, i2, i3 = st.columns(3)
     with i1:
@@ -1570,15 +1604,22 @@ with tab_maintenance:
             base_text += f" Logged `odo_km` at service: <b>{latest_oil_service['odo_km']:.1f} km</b>."
         _card_insight(
             "Service baseline",
-            f"{base_text}<br>Intervals: <b>{oil_interval_km:.0f} km</b> or <b>{oil_interval_days} days</b>, whichever comes first.",
+            f"{base_text}<br>Warning at <b>{oil_warning_km:.0f} km</b>, change due at <b>{oil_due_km:.0f} km</b>, "
+            f"calendar due at <b>{oil_due_days} days</b>.",
         )
     with i2:
-        km_due_sentence = (
-            f"At your recent pace, the distance interval points to about <b>{oil_km_due_date.strftime('%d %b %Y')}</b>."
-            if oil_km_due_date is not None
-            else "Not enough stable riding pace yet to predict the distance-based oil date."
-        )
-        _card_insight("Distance trigger", km_due_sentence)
+        trigger_parts = []
+        if oil_warning_date is not None and oil_warning_left > 0:
+            trigger_parts.append(
+                f"Early warning projects to about <b>{oil_warning_date.strftime('%d %b %Y')}</b>."
+            )
+        if oil_km_due_date is not None and oil_km_left > 0:
+            trigger_parts.append(
+                f"Change due projects to about <b>{oil_km_due_date.strftime('%d %b %Y')}</b>."
+            )
+        if not trigger_parts:
+            trigger_parts.append("Not enough stable riding pace yet to predict the remaining distance triggers.")
+        _card_insight("Distance triggers", " ".join(trigger_parts))
     with i3:
         log_note = (
             f"Fuel log currently runs through <b>{latest_log_date.strftime('%d %b %Y')}</b>. "
