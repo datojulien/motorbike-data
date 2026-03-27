@@ -28,21 +28,28 @@ def pin_gate():
     expected_pin = str(st.secrets["app_pin"])
     st.session_state.setdefault("pin_status", "locked")
     st.session_state.setdefault("pin_buffer", "")
+    st.session_state.setdefault("pin_keyboard_input", "")
+
+    def _sync_keyboard_field() -> None:
+        st.session_state.pin_keyboard_input = st.session_state.pin_buffer
 
     def press_digit(digit: str):
         if len(st.session_state.pin_buffer) < 4:
             st.session_state.pin_buffer += digit
+            _sync_keyboard_field()
 
         if len(st.session_state.pin_buffer) == 4:
             check_pin()
 
     def clear_pin():
         st.session_state.pin_buffer = ""
+        _sync_keyboard_field()
         if st.session_state.pin_status == "incorrect":
             st.session_state.pin_status = "locked"
 
     def backspace():
         st.session_state.pin_buffer = st.session_state.pin_buffer[:-1]
+        _sync_keyboard_field()
         if st.session_state.pin_status == "incorrect":
             st.session_state.pin_status = "locked"
 
@@ -53,10 +60,21 @@ def pin_gate():
         else:
             st.session_state.pin_status = "incorrect"
         st.session_state.pin_buffer = ""
+        st.session_state.pin_keyboard_input = ""
 
     def lock_page():
         st.session_state.pin_status = "locked"
         st.session_state.pin_buffer = ""
+        st.session_state.pin_keyboard_input = ""
+
+    def on_keyboard_pin_change():
+        cleaned = "".join(ch for ch in str(st.session_state.pin_keyboard_input) if ch.isdigit())[:4]
+        st.session_state.pin_keyboard_input = cleaned
+        st.session_state.pin_buffer = cleaned
+        if st.session_state.pin_status == "incorrect":
+            st.session_state.pin_status = "locked"
+        if len(cleaned) == 4:
+            check_pin()
 
     if st.session_state.pin_status != "verified":
         st.markdown(
@@ -82,13 +100,17 @@ def pin_gate():
             .pin-sub {
                 color: #94a3b8;
                 font-size: 0.95rem;
-                margin-bottom: 1rem;
+                margin-bottom: 0.9rem;
+            }
+            .pin-input-wrap {
+                max-width: 246px;
+                margin: 0 auto 0.85rem auto;
             }
             .pin-dots {
                 display: flex;
                 justify-content: center;
                 gap: 12px;
-                margin: 0.8rem 0 1.2rem 0;
+                margin: 0.75rem 0 1rem 0;
             }
             .pin-dot {
                 width: 16px;
@@ -118,6 +140,13 @@ def pin_gate():
                 border-color: rgba(103,232,249,0.35) !important;
                 color: #67e8f9 !important;
             }
+            div[data-testid="stTextInput"] input {
+                text-align: center !important;
+                letter-spacing: 0.45em !important;
+                font-size: 1.15rem !important;
+                font-weight: 700 !important;
+                color: white !important;
+            }
             </style>
             """,
             unsafe_allow_html=True,
@@ -140,6 +169,19 @@ def pin_gate():
             unsafe_allow_html=True,
         )
 
+        st.markdown('<div class="pin-input-wrap">', unsafe_allow_html=True)
+        st.text_input(
+            "Type PIN",
+            key="pin_keyboard_input",
+            max_chars=4,
+            type="password",
+            autocomplete="one-time-code",
+            placeholder="Type PIN",
+            on_change=on_keyboard_pin_change,
+            label_visibility="collapsed",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
         if st.session_state.pin_status == "incorrect":
             st.error("Incorrect PIN")
 
@@ -151,18 +193,16 @@ def pin_gate():
         ]
 
         for row_index, row in enumerate(rows):
-            left_pad, keypad, right_pad = st.columns([1.4, 1.1, 1.4], gap="small")
-            with keypad:
-                cols = st.columns(3, gap="small")
-                for col, label in zip(cols, row):
-                    with col:
-                        key = f"pin_btn_{row_index}_{label}"
-                        if label == "C":
-                            st.button(label, key=key, on_click=clear_pin, use_container_width=True)
-                        elif label == "⌫":
-                            st.button(label, key=key, on_click=backspace, use_container_width=True)
-                        else:
-                            st.button(label, key=key, on_click=press_digit, args=(label,), use_container_width=True)
+            cols = st.columns([1.7, 0.82, 0.82, 0.82, 1.7], gap="small")
+            for col, label in zip(cols[1:4], row):
+                with col:
+                    key = f"pin_btn_{row_index}_{label}"
+                    if label == "C":
+                        st.button(label, key=key, on_click=clear_pin, use_container_width=True)
+                    elif label == "⌫":
+                        st.button(label, key=key, on_click=backspace, use_container_width=True)
+                    else:
+                        st.button(label, key=key, on_click=press_digit, args=(label,), use_container_width=True)
 
         st.stop()
 
