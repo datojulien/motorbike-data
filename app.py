@@ -1193,7 +1193,7 @@ with action2:
         st.rerun()
 
 with action3:
-    st.caption(f"Data source: {data_source_label}. Blackline mode: clean telemetry, forecasting, and live Google Sheets logging.")
+    st.caption(f"Data source: {data_source_label}.")
 
 for notice in data_notices:
     st.warning(notice)
@@ -1345,12 +1345,8 @@ st.markdown(
     <div class="hero">
         <div class="hero-grid">
             <div>
-                <div class="eyebrow">Motorbike Intelligence Console</div>
+                <div class="eyebrow">Fuel Log</div>
                 <h1 class="hero-title">MT-25 Blackline</h1>
-                <div class="hero-sub">
-                    Live fuel telemetry, trend reading, refill forecasting, and clean ride economics —
-                    all fed from your Google Sheet, not a dead CSV.
-                </div>
                 <div class="pillbar">
                     <span class="pill {status_class}">Efficiency: {status_label}</span>
                     <span class="pill info">Latest fuel: RM {latest_price:.2f}/L</span>
@@ -1810,9 +1806,3 @@ with tab_logbook:
         mime="text/csv",
         use_container_width=False,
     )
-
-st.markdown(
-    '<div class="footer-note">Write mode needs a real Google Sheet edit URL in secrets. '
-    'The public published CSV keeps the dashboard read path simple and fast.</div>',
-    unsafe_allow_html=True,
-)
