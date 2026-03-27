@@ -239,7 +239,7 @@ st.markdown(
         --panel-2: rgba(18, 29, 47, 0.78);
         --stroke: rgba(255,255,255,0.09);
         --text: #f8fafc;
-        --muted: #94a3b8;
+        --muted: #b7c5d6;
         --teal: #5eead4;
         --cyan: #67e8f9;
         --blue: #60a5fa;
@@ -531,6 +531,45 @@ st.markdown(
         border: 1px solid rgba(255,255,255,0.08) !important;
     }
 
+    div[data-testid="stWidgetLabel"],
+    div[data-testid="stWidgetLabel"] label,
+    div[data-testid="stMarkdownContainer"] p,
+    div[data-testid="stMarkdownContainer"] li,
+    div[data-testid="stCaptionContainer"],
+    div[data-testid="stCaptionContainer"] p,
+    div[data-testid="stCaptionContainer"] span,
+    label,
+    p,
+    span {
+        color: var(--text);
+    }
+
+    div[data-testid="stCaptionContainer"],
+    div[data-testid="stCaptionContainer"] p,
+    div[data-testid="stCaptionContainer"] span,
+    .micro-note {
+        color: var(--muted) !important;
+    }
+
+    div[data-baseweb="select"] *,
+    div[data-baseweb="input"] input,
+    div[data-baseweb="textarea"] textarea {
+        color: var(--text) !important;
+    }
+
+    div[data-baseweb="select"] svg,
+    div[data-baseweb="input"] svg,
+    div[data-baseweb="popover"] svg {
+        fill: #dbeafe !important;
+        color: #dbeafe !important;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+        color: rgba(183, 197, 214, 0.72) !important;
+        opacity: 1 !important;
+    }
+
     div[data-testid="stDateInput"] input,
     div[data-testid="stNumberInput"] input {
         color: white !important;
@@ -610,6 +649,39 @@ st.markdown(
     div[data-testid="stSegmentedControl"] button[aria-pressed="false"] {
         background: transparent !important;
         color: #cbd5e1 !important;
+    }
+
+    div[data-testid="stTabs"] button {
+        color: #d4e0ee !important;
+    }
+
+    div[data-testid="stTabs"] button:hover {
+        color: #ffffff !important;
+    }
+
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        color: #ffffff !important;
+    }
+
+    div[data-testid="stTabs"] button [data-testid="stMarkdownContainer"] p {
+        color: inherit !important;
+    }
+
+    div[data-testid="stSlider"] label,
+    div[data-testid="stSlider"] span,
+    div[data-testid="stSliderTickBar"] * {
+        color: #dbeafe !important;
+    }
+
+    div[data-testid="stCheckbox"] label,
+    div[data-testid="stRadio"] label,
+    div[data-testid="stToggle"] label {
+        color: var(--text) !important;
+    }
+
+    div[data-testid="stAlert"] *,
+    div[data-testid="stNotification"] * {
+        color: #f8fafc !important;
     }
 
     div[data-testid="stDataFrame"] {
