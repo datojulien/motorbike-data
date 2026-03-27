@@ -519,6 +519,36 @@ def _now_local() -> datetime:
     return datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None)
 
 
+def _secret_date(name: str, fallback: date) -> date:
+    if name not in st.secrets:
+        return fallback
+
+    try:
+        return pd.to_datetime(str(st.secrets[name])).date()
+    except Exception:
+        return fallback
+
+
+def _secret_float(name: str, fallback: float) -> float:
+    if name not in st.secrets:
+        return fallback
+
+    try:
+        return float(st.secrets[name])
+    except Exception:
+        return fallback
+
+
+def _secret_int(name: str, fallback: int) -> int:
+    if name not in st.secrets:
+        return fallback
+
+    try:
+        return int(st.secrets[name])
+    except Exception:
+        return fallback
+
+
 def _norm_full_tank(value: object) -> bool:
     text = str(value).strip().lower()
     return text in {"yes", "y", "true", "1", "full"}
@@ -808,6 +838,37 @@ def classify_efficiency(avg_cons: float) -> tuple[str, str]:
     return "Heavy", "warn"
 
 
+def classify_oil_service(km_left: float, days_left: int, interval_km: float, interval_days: int) -> tuple[str, str, str]:
+    due_reasons = []
+    if km_left <= 0:
+        due_reasons.append("distance interval reached")
+    if days_left <= 0:
+        due_reasons.append("time interval reached")
+
+    if due_reasons:
+        detail = " and ".join(due_reasons).capitalize() + "."
+        return "Overdue", "warn", detail
+
+    km_warn = max(interval_km * 0.12, 250.0)
+    day_warn = max(int(interval_days * 0.12), 14)
+
+    if km_left <= km_warn and days_left <= day_warn:
+        return "Due soon", "info", "Both the distance and time windows are getting close."
+    if km_left <= km_warn:
+        return "Due soon", "info", "Distance interval is getting close."
+    if days_left <= day_warn:
+        return "Due soon", "info", "Time interval is getting close."
+    return "On track", "good", "Oil service is comfortably inside the next maintenance window."
+
+
+def predict_oil_due_date(km_left: float, pace_km_day: float, reference_dt: datetime) -> datetime | None:
+    if km_left <= 0:
+        return reference_dt
+    if pd.isna(pace_km_day) or pace_km_day <= 0:
+        return None
+    return reference_dt + timedelta(days=float(km_left / pace_km_day))
+
+
 def make_plotly_layout(fig: go.Figure, height: int = 360) -> go.Figure:
     fig.update_layout(
         template="plotly_dark",
@@ -983,6 +1044,48 @@ future_monthly_cost = liters_per_month_est * future_price
 
 tips = generate_tips(analysis_df, latest_price)
 
+today_local = _now_local().date()
+latest_log_date = df_all["date"].max().date()
+
+st.session_state.setdefault(
+    "oil_change_date",
+    _secret_date("oil_change_date", latest_log_date),
+)
+st.session_state.setdefault(
+    "oil_interval_km",
+    _secret_float("oil_interval_km", 3000.0),
+)
+st.session_state.setdefault(
+    "oil_interval_days",
+    _secret_int("oil_interval_days", 180),
+)
+
+oil_change_date = st.session_state["oil_change_date"]
+oil_interval_km = max(float(st.session_state["oil_interval_km"]), 100.0)
+oil_interval_days = max(int(st.session_state["oil_interval_days"]), 30)
+
+oil_change_ts = pd.Timestamp(oil_change_date)
+oil_km_since = float(df_all.loc[df_all["date"] > oil_change_ts, "trip_km"].sum())
+oil_days_since = max((today_local - oil_change_date).days, 0)
+oil_km_left = oil_interval_km - oil_km_since
+oil_days_left = oil_interval_days - oil_days_since
+oil_due_date = oil_change_date + timedelta(days=oil_interval_days)
+oil_status_label, oil_status_class, oil_status_detail = classify_oil_service(
+    oil_km_left,
+    oil_days_left,
+    oil_interval_km,
+    oil_interval_days,
+)
+oil_km_due_date = predict_oil_due_date(
+    oil_km_left,
+    analysis_df["daily_km"].dropna().tail(5).mean(),
+    _now_local(),
+)
+oil_next_trigger = min(
+    [d for d in [oil_km_due_date, datetime.combine(oil_due_date, datetime.min.time())] if d is not None],
+    default=None,
+)
+
 # =========================================================
 # HERO
 # =========================================================
@@ -1009,8 +1112,8 @@ st.markdown(
 # =========================================================
 # TABS
 # =========================================================
-tab_overview, tab_trends, tab_costs, tab_logbook = st.tabs(
-    ["Overview", "Trends", "Costs", "Logbook"]
+tab_overview, tab_trends, tab_costs, tab_maintenance, tab_logbook = st.tabs(
+    ["Overview", "Trends", "Costs", "Maintenance", "Logbook"]
 )
 
 # =========================================================
@@ -1128,6 +1231,35 @@ with tab_overview:
         with tip_cols[idx]:
             _card_insight(f"Tip {idx + 1}", tip)
 
+    st.markdown('<div class="section-kicker">Maintenance</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Oil service snapshot</div>', unsafe_allow_html=True)
+    service_cols = st.columns(3)
+    with service_cols[0]:
+        _card_insight(
+            "Oil status",
+            f"<b>{oil_status_label}</b><br>{oil_status_detail}",
+        )
+    with service_cols[1]:
+        km_line = (
+            f"<b>{oil_km_left:.0f} km left</b>"
+            if oil_km_left >= 0
+            else f"<b>{abs(oil_km_left):.0f} km overdue</b>"
+        )
+        _card_insight(
+            "Distance interval",
+            f"{km_line}<br>Tracked since {oil_change_date.isoformat()}: <b>{oil_km_since:.0f} km</b>.",
+        )
+    with service_cols[2]:
+        days_line = (
+            f"<b>{oil_days_left} days left</b>"
+            if oil_days_left >= 0
+            else f"<b>{abs(oil_days_left)} days overdue</b>"
+        )
+        _card_insight(
+            "Time interval",
+            f"{days_line}<br>Due date: <b>{oil_due_date.strftime('%d %b %Y')}</b>.",
+        )
+
 # =========================================================
 # TRENDS
 # =========================================================
@@ -1242,6 +1374,76 @@ with tab_costs:
             "Difference",
             f"That is a shift of about <b>{delta:+.0f} RM/month</b> from your current estimated pace."
         )
+
+# =========================================================
+# MAINTENANCE
+# =========================================================
+with tab_maintenance:
+    st.markdown('<div class="section-kicker">Service</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Oil change monitor</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-body">Set the last oil change date and your preferred service interval. '
+        'Distance is tracked from the fuel log, so this works best when the log covers all riding.</div>',
+        unsafe_allow_html=True,
+    )
+
+    setup1, setup2, setup3 = st.columns(3)
+    with setup1:
+        st.date_input("Last oil change", key="oil_change_date")
+    with setup2:
+        st.number_input(
+            "Oil interval (km)",
+            min_value=100.0,
+            step=100.0,
+            format="%.0f",
+            key="oil_interval_km",
+        )
+    with setup3:
+        st.number_input(
+            "Oil interval (days)",
+            min_value=30,
+            step=30,
+            key="oil_interval_days",
+        )
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        _card_metric("Oil service status", oil_status_label, oil_status_detail)
+    with m2:
+        km_value = f"{oil_km_left:.0f} km" if oil_km_left >= 0 else f"{abs(oil_km_left):.0f} km overdue"
+        _card_metric("Distance remaining", km_value, f"Tracked since service: {oil_km_since:.0f} km")
+    with m3:
+        day_value = f"{oil_days_left} days" if oil_days_left >= 0 else f"{abs(oil_days_left)} days overdue"
+        _card_metric("Time remaining", day_value, f"Due date: {oil_due_date.strftime('%d %b %Y')}")
+    with m4:
+        next_trigger_text = oil_next_trigger.strftime("%d %b %Y") if oil_next_trigger is not None else "Need more pace data"
+        next_trigger_sub = (
+            "Predicted km trigger"
+            if oil_km_due_date is not None and oil_next_trigger == oil_km_due_date
+            else "Calendar trigger"
+        )
+        _card_metric("Next oil trigger", next_trigger_text, next_trigger_sub)
+
+    i1, i2, i3 = st.columns(3)
+    with i1:
+        _card_insight(
+            "Service baseline",
+            f"Last oil change is set to <b>{oil_change_date.strftime('%d %b %Y')}</b> with intervals of "
+            f"<b>{oil_interval_km:.0f} km</b> or <b>{oil_interval_days} days</b>, whichever comes first.",
+        )
+    with i2:
+        km_due_sentence = (
+            f"At your recent pace, the distance interval points to about <b>{oil_km_due_date.strftime('%d %b %Y')}</b>."
+            if oil_km_due_date is not None
+            else "Not enough stable riding pace yet to predict the distance-based oil date."
+        )
+        _card_insight("Distance trigger", km_due_sentence)
+    with i3:
+        log_note = (
+            f"Fuel log currently runs through <b>{latest_log_date.strftime('%d %b %Y')}</b>. "
+            f"If you have ridden since then, the tracked oil kilometers may be understated."
+        )
+        _card_insight("Tracking note", log_note)
 
 # =========================================================
 # LOGBOOK
