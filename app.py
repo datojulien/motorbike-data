@@ -102,12 +102,13 @@ def pin_gate():
                 box-shadow: 0 0 18px rgba(103,232,249,0.45);
             }
             div[data-testid="stButton"] > button {
-                width: 72px !important;
+                width: 100% !important;
+                max-width: 78px !important;
                 height: 72px !important;
                 border-radius: 999px !important;
                 font-size: 1.35rem !important;
                 font-weight: 700 !important;
-                margin: 0.15rem auto !important;
+                margin: 0 auto !important;
                 border: 1px solid rgba(255,255,255,0.08) !important;
                 background: linear-gradient(180deg, rgba(30,41,59,0.95), rgba(15,23,42,0.98)) !important;
                 color: white !important;
@@ -150,16 +151,18 @@ def pin_gate():
         ]
 
         for row_index, row in enumerate(rows):
-            cols = st.columns(3)
-            for col, label in zip(cols, row):
-                with col:
-                    key = f"pin_btn_{row_index}_{label}"
-                    if label == "C":
-                        st.button(label, key=key, on_click=clear_pin, use_container_width=True)
-                    elif label == "⌫":
-                        st.button(label, key=key, on_click=backspace, use_container_width=True)
-                    else:
-                        st.button(label, key=key, on_click=press_digit, args=(label,), use_container_width=True)
+            left_pad, keypad, right_pad = st.columns([1.4, 1.1, 1.4], gap="small")
+            with keypad:
+                cols = st.columns(3, gap="small")
+                for col, label in zip(cols, row):
+                    with col:
+                        key = f"pin_btn_{row_index}_{label}"
+                        if label == "C":
+                            st.button(label, key=key, on_click=clear_pin, use_container_width=True)
+                        elif label == "⌫":
+                            st.button(label, key=key, on_click=backspace, use_container_width=True)
+                        else:
+                            st.button(label, key=key, on_click=press_digit, args=(label,), use_container_width=True)
 
         st.stop()
 
@@ -241,6 +244,13 @@ st.markdown(
         backdrop-filter: blur(18px);
     }
 
+    .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 220px;
+        gap: 1rem;
+        align-items: center;
+    }
+
     .hero::before {
         content: "";
         position: absolute;
@@ -299,6 +309,99 @@ st.markdown(
     .pill.good { background: rgba(52,211,153,0.14); color: #86efac; }
     .pill.warn { background: rgba(251,191,36,0.12); color: #fde68a; }
     .pill.info { background: rgba(96,165,250,0.14); color: #bfdbfe; }
+
+    .oil-signal-card {
+        position: relative;
+        z-index: 1;
+        justify-self: end;
+        width: 220px;
+        padding: 1rem 1rem 0.9rem 1rem;
+        border-radius: 22px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(180deg, rgba(8, 15, 29, 0.92), rgba(10, 20, 36, 0.86));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 40px rgba(0,0,0,0.28);
+    }
+
+    .oil-signal-head {
+        color: var(--muted);
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-weight: 700;
+        margin-bottom: 0.65rem;
+    }
+
+    .oil-signal-layout {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+    }
+
+    .oil-signal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+
+    .oil-signal-label {
+        color: var(--text);
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .oil-signal-copy {
+        color: #dbeafe;
+        font-size: 0.84rem;
+        line-height: 1.35;
+    }
+
+    .signal-stack {
+        width: 54px;
+        padding: 0.48rem 0.45rem;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(6,10,18,0.96), rgba(16,24,36,0.98));
+        border: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.42rem;
+        box-shadow: inset 0 1px 1px rgba(255,255,255,0.04);
+    }
+
+    .signal-dot {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: inset 0 -8px 18px rgba(0,0,0,0.28);
+    }
+
+    .signal-dot.green.active {
+        background: radial-gradient(circle at 35% 30%, #bbf7d0 0%, #4ade80 28%, #15803d 78%);
+        box-shadow: 0 0 18px rgba(74, 222, 128, 0.35);
+    }
+
+    .signal-dot.orange.active {
+        background: radial-gradient(circle at 35% 30%, #fde68a 0%, #f59e0b 26%, #b45309 78%);
+        box-shadow: 0 0 18px rgba(245, 158, 11, 0.35);
+    }
+
+    .signal-dot.red.active {
+        background: radial-gradient(circle at 35% 30%, #fecaca 0%, #ef4444 24%, #b91c1c 78%);
+        box-shadow: 0 0 18px rgba(239, 68, 68, 0.35);
+    }
+
+    @media (max-width: 900px) {
+        .hero-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .oil-signal-card {
+            justify-self: stretch;
+            width: auto;
+        }
+    }
 
     .metric-card, .insight-card, .section-shell {
         border: 1px solid var(--stroke);
@@ -1222,23 +1325,54 @@ trigger_candidates.append((datetime.combine(oil_due_date, datetime.min.time()), 
 if trigger_candidates:
     oil_next_trigger, oil_next_trigger_label = min(trigger_candidates, key=lambda item: item[0])
 
+oil_signal_state = "green"
+oil_signal_label = "Oil OK"
+oil_signal_copy = f"{oil_km_since:.0f} km since change"
+if oil_km_since >= oil_due_km:
+    oil_signal_state = "red"
+    oil_signal_label = "Change Now"
+    oil_signal_copy = f"{abs(oil_km_left):.0f} km overdue"
+elif oil_km_since >= oil_warning_km:
+    oil_signal_state = "orange"
+    oil_signal_label = "Plan Service"
+    oil_signal_copy = f"{oil_km_left:.0f} km until change"
+
 # =========================================================
 # HERO
 # =========================================================
 st.markdown(
     f"""
     <div class="hero">
-        <div class="eyebrow">Motorbike Intelligence Console</div>
-        <h1 class="hero-title">MT-25 Blackline</h1>
-        <div class="hero-sub">
-            Live fuel telemetry, trend reading, refill forecasting, and clean ride economics —
-            all fed from your Google Sheet, not a dead CSV.
-        </div>
-        <div class="pillbar">
-            <span class="pill {status_class}">Efficiency: {status_label}</span>
-            <span class="pill info">Latest fuel: RM {latest_price:.2f}/L</span>
-            <span class="pill">Entries: {len(df)} | Completed tanks: {len(analysis_df)}</span>
-            <span class="pill">Average: {avg_cons:.2f} L/100km</span>
+        <div class="hero-grid">
+            <div>
+                <div class="eyebrow">Motorbike Intelligence Console</div>
+                <h1 class="hero-title">MT-25 Blackline</h1>
+                <div class="hero-sub">
+                    Live fuel telemetry, trend reading, refill forecasting, and clean ride economics —
+                    all fed from your Google Sheet, not a dead CSV.
+                </div>
+                <div class="pillbar">
+                    <span class="pill {status_class}">Efficiency: {status_label}</span>
+                    <span class="pill info">Latest fuel: RM {latest_price:.2f}/L</span>
+                    <span class="pill">Entries: {len(df)} | Completed tanks: {len(analysis_df)}</span>
+                    <span class="pill">Average: {avg_cons:.2f} L/100km</span>
+                </div>
+            </div>
+            <div class="oil-signal-card">
+                <div class="oil-signal-head">Oil Watch</div>
+                <div class="oil-signal-layout">
+                    <div class="signal-stack">
+                        <div class="signal-dot red {"active" if oil_signal_state == "red" else ""}"></div>
+                        <div class="signal-dot orange {"active" if oil_signal_state == "orange" else ""}"></div>
+                        <div class="signal-dot green {"active" if oil_signal_state == "green" else ""}"></div>
+                    </div>
+                    <div class="oil-signal-body">
+                        <div class="oil-signal-label">{oil_signal_label}</div>
+                        <div class="oil-signal-copy">{oil_signal_copy}</div>
+                        <div class="micro-note">Warn at {oil_warning_km:.0f} km, due at {oil_due_km:.0f} km</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     """,
