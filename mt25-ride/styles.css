@@ -108,3 +108,27 @@ svg{display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:
  repeating-linear-gradient(0deg,transparent,transparent 53px,rgba(66,111,130,.16) 54px,transparent 56px),
  repeating-linear-gradient(90deg,transparent,transparent 80px,rgba(66,111,130,.15) 81px,transparent 84px);
  background-size:550px 350px,460px 470px,100% 100%,100% 100%;filter:none}
+
+/* MT-25 Ride v2: glanceable foreground turn-by-turn directions. */
+.nav-route-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
+.nav-route-overlay polyline{fill:none;stroke-linejoin:round;stroke-linecap:round}
+#nav-route-halo{stroke:rgba(4,12,22,.92);stroke-width:12}
+#nav-route-line{stroke:#63e7fa;stroke-width:6;filter:drop-shadow(0 0 5px rgba(58,224,245,.55))}
+.nav-target-pin{position:absolute;z-index:3;pointer-events:none;transform:translate(-50%,-100%);width:28px;height:35px;display:grid;place-items:center;background:#071e2a;color:#8cf7ff;border:2px solid #69dfee;border-radius:14px 14px 14px 0;box-shadow:0 4px 12px #0008;font-size:17px}
+.nav-guidance{position:absolute;z-index:6;top:49px;left:9px;right:57px;min-height:81px;display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid rgba(116,228,246,.4);border-radius:12px;background:rgba(4,20,29,.96);box-shadow:0 8px 30px rgba(0,0,0,.48);color:#f6fdff;pointer-events:auto}
+.nav-maneuver{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 68px;color:#70edff;border-right:1px solid #284b57;padding-right:9px}
+.nav-arrow{font-size:36px;font-weight:900;line-height:37px}.nav-next-distance{font-size:12px;font-weight:900;white-space:nowrap;line-height:1.4}
+.nav-words{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
+.nav-command{font-size:clamp(12px,1.3vw,19px);font-weight:900;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.nav-destination{font-size:10px;color:#a7c2ce;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-arrival{font-size:10px;font-weight:800;color:#70edff;white-space:nowrap}
+.nav-actions{display:flex;flex-direction:column;gap:5px}.nav-small-button{width:32px;height:30px;border-radius:7px;border:1px solid rgba(169,214,228,.25);color:#fff;background:rgba(23,65,79,.8);font-size:15px;display:grid;place-items:center;padding:0}
+.nav-small-button.stop{font-size:22px;color:#ffb1ab}
+.map-area.is-navigating .map-actions{top:72%}.dock-btn.nav-is-active{border-color:var(--accent);background:var(--panel2)}
+.nav-search-row{display:flex;align-items:center;gap:8px}.nav-search-row .modal-input{min-width:0;flex:1}.nav-search-row .action-btn{min-width:78px}
+.place-results{margin:10px 0;max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.place-result{width:100%;min-height:48px;padding:10px;text-align:left;border:1px solid var(--stroke);border-radius:8px;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.place-result:active{border-color:var(--accent)}.place-result strong{font-size:13px}.place-result small{font-size:10px;color:var(--muted)}
+@media(max-width:880px) and (orientation:landscape){.nav-guidance{top:40px;left:6px;right:45px;min-height:70px;padding:5px 8px;gap:6px}.nav-maneuver{flex-basis:51px;padding-right:5px}.nav-arrow{font-size:27px;line-height:29px}.nav-next-distance{font-size:11px}.nav-command{font-size:12px}.nav-destination,.nav-arrival{font-size:9px}.nav-actions{gap:4px}.nav-small-button{width:27px;height:26px}.map-area.is-navigating .map-actions{top:72%}}
+@media(max-height:380px) and (orientation:landscape){.nav-guidance{top:30px;min-height:55px}.nav-destination{display:none}.nav-arrow{font-size:24px;line-height:24px}.nav-command{font-size:11px}.nav-arrival{font-size:9px}}
+@media(orientation:portrait){.nav-guidance{top:40px;left:7px;right:46px;min-height:72px;padding:7px}.nav-maneuver{flex-basis:52px}.nav-arrow{font-size:28px}.nav-command{font-size:12px}.nav-destination,.nav-arrival{font-size:9px}.nav-small-button{width:28px;height:27px}.map-area.is-navigating .map-actions{top:78%}}

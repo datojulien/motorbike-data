@@ -1,4 +1,4 @@
-/* MT-25 Ride · v1.0 — self-contained motorcycle trip computer (no backend). */
+/* MT-25 Ride · v2.0 — self-contained motorcycle trip computer (no backend). */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -51,6 +51,7 @@
   let demoInterval = null;
   let demoStep = 0;
   let routeRefreshAt = 0;
+  let navigation = null;
   let startNewSegment = false;
 
   function setTheme(next){
@@ -119,7 +120,7 @@
     }
   }
   async function holdScreen(){
-    if(!rideActive||document.hidden||!('wakeLock'in navigator)||wakeLock)return;
+    if((!rideActive&&!navigation?.getState().active)||document.hidden||!('wakeLock'in navigator)||wakeLock)return;
     try {wakeLock=await navigator.wakeLock.request('screen');wakeLock.addEventListener('release',()=>{wakeLock=null;});}
     catch { /* Wake Lock can be denied by Low Power Mode or system policy. */ }
   }
@@ -185,6 +186,7 @@
       }
     }
     if(followPosition)mapCenter={lat,lon};
+    navigation?.handleFix({lat,lon},accuracy,currentSpeed);
     drawMap();renderInstrument();
   }
   function updatePosition(p){
@@ -225,8 +227,9 @@
     demoInterval=setInterval(()=>{
       if(!isDemo || !rideActive)return;
       demoStep=(demoStep+1)%pts.length;
-      const p=pts[(demoStep+60)%pts.length];
-      processFix({...p,speed:(59+10*Math.sin(demoStep/8))/3.6,heading:70+20*Math.cos(demoStep/11),accuracy:4,time:Date.now()});
+      const navDemo=navigation?.demoPoint();
+      const p=navDemo||pts[(demoStep+60)%pts.length];
+      processFix({...p,speed:(59+10*Math.sin(demoStep/8))/3.6,heading:navDemo?.heading??(70+20*Math.cos(demoStep/11)),accuracy:4,time:Date.now()});
     },1200);
     renderInstrument();toast('Simulation only — no real position or trip is recorded.');
   }
@@ -239,6 +242,7 @@
     return out;
   }
   function endDemo(){
+    navigation?.stop(false);
     isDemo=false;rideActive=false;if(demoInterval){clearInterval(demoInterval);demoInterval=null;}
     $('demo-badge').hidden=true;trip=loadTrip();rawFix=null;hasGPS=false;currentSpeed=null;currentHeading=null;gpsAccuracy=null;currentPosition=null;lastFixAt=0;
     mapCenter={...defaultCenter};followPosition=true;
@@ -283,6 +287,7 @@
       $('marker-arrow').style.transform=`rotate(${Number.isFinite(currentHeading)?currentHeading:0}deg)`;
     }
     // Avoid redrawing thousands of track points more than necessary.
+    navigation?.drawOverlay({projected,topLeft,w,h,zoom:mapZoom});
     const svg=$('route-overlay');svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
     if(trip.points.length){
       let chunks=[],chunk=[];
@@ -299,17 +304,27 @@
   }
   function initMapInteractions(){
     const area=$('map-area');
+    let longPress=null,pressX=0,pressY=0;
+    function clearPress(){if(longPress){clearTimeout(longPress);longPress=null;}}
     area.addEventListener('pointerdown',ev=>{
-      if(ev.target.closest('button')||ev.target.closest('a'))return;
+      if(ev.target.closest('button,a,.nav-guidance,.map-top,.map-bottom'))return;
+      clearPress();pressX=ev.clientX;pressY=ev.clientY;
+      // Hold a finger for 650 ms to pin a map location. Dragging cancels the press.
+      if(ev.pointerType==='touch'||ev.pointerType==='pen')longPress=setTimeout(()=>{
+        longPress=null;const rect=area.getBoundingClientRect(),center=projected(mapCenter.lat,mapCenter.lon,mapZoom);
+        const point=unproject(center.x+(pressX-rect.left-rect.width/2),center.y+(pressY-rect.top-rect.height/2),mapZoom);
+        pointer=null;area.classList.remove('dragging');navigation?.pinDestination(point);
+      },650);
       pointer={x:ev.clientX,y:ev.clientY,center:projected(mapCenter.lat,mapCenter.lon,mapZoom)};
       area.setPointerCapture(ev.pointerId);area.classList.add('dragging');
     });
     area.addEventListener('pointermove',ev=>{
+      if(Math.hypot(ev.clientX-pressX,ev.clientY-pressY)>9)clearPress();
       if(!pointer)return;
       const next=unproject(pointer.center.x-(ev.clientX-pointer.x),pointer.center.y-(ev.clientY-pointer.y),mapZoom);
       mapCenter=next;followPosition=false;drawMap();
     });
-    for(const evt of ['pointerup','pointercancel','lostpointercapture'])area.addEventListener(evt,()=>{pointer=null;area.classList.remove('dragging');});
+    for(const evt of ['pointerup','pointercancel','lostpointercapture'])area.addEventListener(evt,()=>{clearPress();pointer=null;area.classList.remove('dragging');});
     function zoom(amount){mapZoom=Math.max(3,Math.min(18,mapZoom+amount));drawMap();}
     $('zoom-in').addEventListener('click',()=>zoom(1));$('zoom-out').addEventListener('click',()=>zoom(-1));
     $('recenter').addEventListener('click',()=>{
@@ -317,7 +332,7 @@
       followPosition=true;mapCenter={...currentPosition};drawMap();
     });
     let lastPinch=null;
-    area.addEventListener('touchstart',ev=>{if(ev.touches.length===2){lastPinch=Math.hypot(ev.touches[0].clientX-ev.touches[1].clientX,ev.touches[0].clientY-ev.touches[1].clientY);pointer=null;}},{passive:true});
+    area.addEventListener('touchstart',ev=>{if(ev.touches.length===2){clearPress();lastPinch=Math.hypot(ev.touches[0].clientX-ev.touches[1].clientX,ev.touches[0].clientY-ev.touches[1].clientY);pointer=null;}},{passive:true});
     area.addEventListener('touchmove',ev=>{if(ev.touches.length!==2||lastPinch===null)return;const dist=Math.hypot(ev.touches[0].clientX-ev.touches[1].clientX,ev.touches[0].clientY-ev.touches[1].clientY);if(Math.abs(dist-lastPinch)>44){zoom(dist>lastPinch?1:-1);lastPinch=dist;}},{passive:true});
     area.addEventListener('touchend',()=>{lastPinch=null;},{passive:true});
   }
@@ -326,25 +341,6 @@
     $('modal-body').innerHTML=content;$('modal-backdrop').hidden=false;
   }
   function closeModal(){ $('modal-backdrop').hidden=true; }
-  function navModal(){
-    showModal('Where to?','ROUTE / PLANNER',`
-      <p>Enter a destination and continue in your preferred navigation app. Spoken directions can play through your helmet headset.</p>
-      <label class="modal-label" for="destination">DESTINATION</label>
-      <input id="destination" class="modal-input" placeholder="e.g. Putrajaya Sentral" autocomplete="off" autocapitalize="words" maxlength="220">
-      <div class="modal-actions"><button class="action-btn primary" id="apple-nav">OPEN APPLE MAPS ↗</button><button class="action-btn" id="waze-nav">OPEN WAZE ↗</button></div>
-      <div class="modal-card"><strong>Important for trip recording</strong>iOS may suspend this dashboard when you switch apps. GPS and trip recording in this web app are foreground-only. Your existing distance remains saved locally.</div>`);
-    const input=$('destination');
-    const run=(app)=>{
-      const text=input.value.trim();if(!text){toast('Enter a destination first.');input.focus();return;}
-      const q=encodeURIComponent(text);
-      const link=app==='apple'?`https://maps.apple.com/?daddr=${q}&dirflg=d`:`https://waze.com/ul?q=${q}&navigate=yes`;
-      window.open(link,'_blank','noopener,noreferrer');
-      toast('Navigation opened separately. Return to MT-25 Ride when finished.');
-    };
-    $('apple-nav').addEventListener('click',()=>run('apple'));
-    $('waze-nav').addEventListener('click',()=>run('waze'));
-    input.addEventListener('keydown',e=>{if(e.key==='Enter')run('apple');});
-  }
   function musicModal(){
     showModal('Your riding soundtrack','AUDIO / HELMET',`
       <p>Control music with your Bluetooth helmet buttons, Siri or the music app itself. iOS does not let this webpage operate the playback controls of a separate music app.</p>
@@ -407,10 +403,10 @@
         <button class="action-btn full demo-toggle" id="demo-btn">${isDemo?'EXIT DEMO':'START DEMO MODE'}</button>
       </div>
       <div class="modal-card"><strong>Privacy and connectivity</strong>
-        <p class="muted-note">Trip recordings stay in your browser storage, with no account or tracking server. Map tiles load from OpenStreetMap over the internet and reveal the approximate area being viewed to its servers.</p>
-        <p class="muted-note">GPS requires your permission and HTTPS hosting. Offline GPS and trip numbers can work after installation, but live map tiles cannot be downloaded in advance from OSM public servers.</p>
+        <p class="muted-note">Trip recordings stay on this iPhone. The map uses OpenStreetMap, place search uses Photon, and routes use OSRM. Searching sends the search text; routing sends only the current point and selected destination to those services, not your trip history.</p>
+        <p class="muted-note">GPS needs permission and HTTPS. Foreground route guidance uses internet to plan or reroute. Tiles cannot be bulk-downloaded from OSM. Routing services are community demos: no service or traffic guarantee.</p>
       </div>
-      <p class="muted-note">MT-25 Ride v1.0 · A GPS trip computer, not a vehicle diagnostic display. RPM, actual fuel level and gear position aren't available from the iPhone alone.</p>`);
+      <p class="muted-note">MT-25 Ride v2.0 · A GPS trip computer, not a vehicle diagnostic display. RPM, actual fuel level and gear position aren't available from the iPhone alone.</p>`);
     $('day-checkbox').addEventListener('change',e=>setTheme(e.target.checked?'day':'night'));
     $('demo-btn').addEventListener('click',()=>{closeModal();isDemo?endDemo():initializeDemo();});
   }
@@ -418,7 +414,7 @@
     $('theme-btn').addEventListener('click',()=>setTheme(theme==='night'?'day':'night'));
     $('settings-btn').addEventListener('click',settingsModal);
     $('ride-btn').addEventListener('click',startRide);
-    $('nav-btn').addEventListener('click',navModal);
+    $('nav-btn').addEventListener('click',()=>navigation?.openPlanner());
     $('music-btn').addEventListener('click',musicModal);
     $('trips-btn').addEventListener('click',tripModal);
     $('modal-close').addEventListener('click',closeModal);
@@ -426,13 +422,18 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
     document.addEventListener('visibilitychange',()=>{
       lastTimerTick=Date.now();
-      if(!document.hidden && rideActive)holdScreen();
+      if(!document.hidden && (rideActive||navigation?.getState().active))holdScreen();
       if(document.hidden){trip.lastAccepted=null;startNewSegment=trip.points.length>0;saveTrip(true);}
     });
     window.addEventListener('pagehide',()=>saveTrip(true));
     let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(drawMap,100);});
   }
   function init(){
+    navigation=window.MT25Navigation.create({
+      getPosition:()=>currentPosition,getAccuracy:()=>gpsAccuracy,getSpeed:()=>currentSpeed,
+      beginGPS,isDemo:()=>isDemo,drawMap,showModal,closeModal,toast,
+      onNavState:active=>{if(active)holdScreen();else if(!rideActive)releaseScreen();}
+    });
     setTheme(theme);clock();addTicks();initEvents();initMapInteractions();if(PREVIEW)document.documentElement.classList.add('preview-map');drawMap();
     renderInstrument();setInterval(tick,1000);
     if(DEMO)initializeDemo();

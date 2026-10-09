@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "MT-25 Ride Dashboard",
+  "name": "MT-25 Ride Navigator",
   "short_name": "MT-25 Ride",
-  "description": "GPS speed, live map and trip recorder for an iPhone motorcycle display.",
+  "description": "Turn-by-turn GPS navigation, speed, live map and trip recorder for an iPhone motorcycle display.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

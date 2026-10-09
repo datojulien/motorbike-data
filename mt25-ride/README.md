@@ -1,69 +1,54 @@
-# MT-25 Ride
+# MT-25 Ride v2 — Turn-by-turn Motorcycle Navigator
 
-A personal, installable iPhone dashboard for the Yamaha MT-25. Built with standard HTML, CSS and JavaScript. No login, paid API key or server-side database required.
+An installable, landscape-first GPS dashboard for an **iPhone 13** on a Yamaha MT-25. Plain HTML, CSS and JavaScript; no account, database, app store or paid API key.
 
-## Features in version 1.0
+**Live address:** https://datojulien.github.io/motorbike-data/
 
-- Large GPS speedometer in **km/h**, plus compass heading and location accuracy.
-- Live, pannable OpenStreetMap view with your position and route trace.
-- Trip distance, recording duration, average and maximum GPS speeds.
-- Pause/resume and saved ride in browser storage.
-- Export trip track to **GPX** or **CSV** (using iOS share sheet when available).
-- Open Apple Maps or Waze with a destination for voice-guided directions.
-- Quick Apple Music and Spotify launchers (not native playback control).
-- Day/night themes, iOS Home Screen icon, Screen Wake Lock where supported.
-- Demo mode for checking the dashboard indoors, without granting GPS access.
-- Offline app shell; **map imagery requires internet access**.
+The app is in `datojulien/motorbike-data/mt25-ride/`. GitHub Actions (`.github/workflows/mt25-ride-pages.yml`) publishes *only* this directory to the GitHub Pages root, preserving unrelated motorcycle fuel/maintenance files.
 
-## GitHub deployment (datojulien/motorbike-data)
+## What's new in v2
 
-The deployable app files live in the `mt25-ride/` directory of [motorbike-data](https://github.com/datojulien/motorbike-data). The dedicated GitHub Actions workflow publishes **only this directory** to the repository's GitHub Pages site. The Python app, fuel logs and other repository files are excluded from the deployed website.
+- **In-dashboard turn-by-turn navigation**: search for a place (explicit search; no background autocomplete), choose a result, or enter `latitude, longitude`.
+- **Hold the map for 650 ms** to pin a destination; a confirmation appears.
+- Blue/cyan **route polyline** over the existing OpenStreetMap map, destination flag, next-turn arrow, remaining metres, road name, distance remaining and ETA.
+- Spoken English instructions using iOS **Web Speech** where available, with a prominent mute/unmute button. Tap voice once if Safari does not play initial instructions. Helmet audio output is controlled by iOS Bluetooth; web speech is not guaranteed on all iOS versions.
+- **Off-route rerouting** after three sufficiently accurate, moving GPS fixes outside the route, with a 30-second minimum gap between routing requests. Poor GPS accuracy does not trigger reroutes.
+- One-tap **Apple Maps / Waze backup** through **NAVIGATE → WAZE / APPLE MAPS** when directions aren't available.
+- Continuing the existing speedometer, GPS accuracy/heading, trip tracking, pause, GPX/CSV export, and day/night mode.
+- Demo-mode route simulation: **Settings → Start Demo**, **Navigate → Demo: Putrajaya**, **Resume Ride**. The route simulation uses synthetic GPS readings and does not touch saved real rides.
+- Map and navigation can run while trip recording is paused; iOS foreground rules still apply.
 
-**Pages URL:** https://datojulien.github.io/motorbike-data/
+## Install on iPhone 13
 
-One-time setup if the site is not already enabled: open **Repository Settings → Pages → Build and deployment → Source → GitHub Actions**. Then run the **MT-25 Ride Pages** workflow from the Actions tab if no successful deployment appears automatically.
+1. Open **https://datojulien.github.io/motorbike-data/** in Safari.
+2. **Share → Add to Home Screen**, then open **MT-25 Ride** from your Home Screen.
+3. Disable **Portrait Orientation Lock** if you want the dashboard in landscape. Give **Precise Location** permission.
+4. With the motorcycle stationary, tap **NAVIGATE**. Search e.g. `Putrajaya Sentral`, tap a result, wait for the route, then tap the voice button to test Bluetooth audio.
+5. Tap **START RIDE** separately if you also want to record the trip and export GPX/CSV.
+6. To leave navigation, tap the **×** on the instructions or **NAVIGATE → END NAVIGATION**. This does **not** erase your recorded ride.
 
-## Install it on the iPhone 13
+## Routing and search services — read before riding
 
-1. Open the live Pages URL above using **Safari on the iPhone 13**.
-2. Tap **Share → Add to Home Screen**, and turn on **Open as Web App** if offered.
-3. Open the Home Screen icon, rotate to landscape (disable Portrait Orientation Lock if needed), then tap **START RIDE** and allow Precise Location.
+Navigation depends on connectivity and these *community demo* services:
 
-**Important:** The HTTPS GitHub Pages origin is necessary for geolocation. Opening `index.html` directly from the Files app is not sufficient for reliable GPS.
+- **OSRM** `https://router.project-osrm.org` for routes and turn locations: best effort, non-commercial testing and low volume; not guaranteed, not traffic-aware. Requests happen when you select a destination or after a confirmed deviation (never more often than the 30-second rerouting cooldown). Route requests include **current GPS position and destination**. See [OSRM demo policy](https://github-wiki-see.page/m/Project-OSRM/osrm-backend/wiki/Api-usage-policy) and [API](https://project-osrm.org/docs/v26.5.0/http).
+- **Photon** `https://photon.komoot.io` for *explicit* text search only; no type-ahead/autocomplete, bulk queries, or periodic lookups. Queries include search text and a nearby location bias to improve results. Low-volume personal use only, no uptime guarantees. See [Photon's demo server guidance](https://github.com/komoot/photon).
+- **OpenStreetMap** `https://tile.openstreetmap.org/` for visible map tiles only, with attribution. No bulk tile downloads or offline prefetching. See [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/).
 
-## Indoor test
+For routine or safety-critical navigation, replace demo services with a hosted provider and test reliability before relying on them. Road closures, traffic, one-way streets, and motorcycle-specific restrictions can be inaccurate or missing. Check road signage and regulations. **Waze or Apple Maps is the safer backup.**
 
-Open the deployed site with `?demo=1` at the end of its URL. Alternatively tap Settings → **START DEMO MODE**. Demo mode is explicitly labelled and never overwrites your actual saved trip. `?preview=1` replaces online map imagery with an abstract graphic solely for offline visual previews; it is not a street map.
+## Privacy and persistence
 
-## Privacy
+GPX/CSV tracks stay in this browser's `localStorage`; the app does not upload them to a custom server. Public providers receive normal map-tile requests, search terms and limited endpoints for route requests. The service-worker cache holds the app shell only. Routes are not currently saved offline and route guidance may be interrupted without network access.
 
-The site has **no custom backend**, accounts, analytics or telemetry. Trip points are stored in your browser's localStorage. Exported GPX/CSV files include sensitive location history, so share them carefully. OpenStreetMap receives normal map-tile requests (which reveal the approximate viewed area) when connected. Nothing is automatically synced between devices.
+## Important iOS limitations
 
-## How the GPS works
+**Keep the iPhone unlocked and MT-25 Ride visible.** iOS can suspend geolocation updates, web speech and trip timers when locked, another app is opened, Low Power Mode intervenes or the phone overheats. Wake Lock is requested while riding or navigating if supported, but isn't guaranteed. Apple Music cannot be controlled from this site; use your helmet controls or Siri.
 
-The speed shown is calculated from `GeolocationCoordinates.speed` when available, with a distance/time fallback. GPS readings are smoothed. Trip distance rejects very inaccurate fixes, small position jitter, implausible jumps and stale gaps. These are **estimates**, not readings from your Yamaha ECU or wheel speed sensor. Phone GPS can lag or be incorrect, especially near tall buildings and in tunnels.
+The displayed speed is GPS-derived and can be inaccurate; use the Yamaha factory gauges for road-legal speed/critical data. Secure the iPhone in a *vibration-damped* motorcycle mount, add a tether, avoid wet Lightning charging and be aware of Malaysia's heat/rain. Never touch or type into navigation while riding. Use Apple Maps/Waze for longer or safety-critical trips until this prototype has been tested outdoors.
 
-The browser may suspend location and timers when you leave the dashboard, lock the phone or switch to a navigation app. Background miles are **not** reconstructed automatically. App switching also interrupts live visible speed updates. Screen Wake Lock is requested while a ride is active but can be denied, released or overridden by iOS, Low Power Mode or thermal protection.
+## Local development and testing
 
-## Limits and hardware safety
+Serve this directory with `python3 -m http.server 8000` and open `http://localhost:8000/` in a browser; enable Demo Mode in Settings. For an iPhone, use HTTPS (GitHub Pages) and Safari.
 
-- There is no real embedded turn-by-turn navigation in v1: Apple Maps / Waze launch outside the dashboard.
-- No native iOS control of Apple Music or Spotify playing in the background from an unrelated app.
-- No connection to Yamaha fuel gauge, RPM, gears or other ECU data.
-- The iPhone is not a certified motorcycle instrument; **never rely on it instead of the factory speedometer**.
-- Don't handle the screen while moving. Use a vibration-damped, secure mount with a backup tether.
-- Direct sunlight and Malaysia's heat may trigger thermal shutdown. Apple specifies an ambient operating range up to 35°C for iPhones; protect from rain, and avoid a sealed case that traps excessive heat.
-- Charging over Lightning in rain can be hazardous; use weather-appropriate hardware and avoid charging when the port is wet.
-
-## Technical notes
-
-Everything except map imagery loads without external JavaScript libraries. The app only requests standard OpenStreetMap raster tiles at `https://tile.openstreetmap.org/{z}/{x}/{y}.png` as you view the map and displays © OpenStreetMap contributors attribution. **Do not prefetch/bulk-download** tiles; OSM's public server prohibits offline tile downloads.
-
-The service worker caches local application files only and leaves map-tile caching to your browser's ordinary HTTP cache. For robust multi-day offline touring, use Apple Maps or another provider with authorized offline navigation/maps.
-
-## Run on your own computer
-
-From this directory: `python3 -m http.server 8000`, then open `http://localhost:8000/?demo=1` in a browser. Localhost is treated as a secure context by modern browsers. For iPhone access, publish over HTTPS.
-
----
-MT-25 Ride is a personal project prototype. Test GPS, wake behavior, touch controls and visibility in a **stationary** motorcycle setup before regular use.
+`navigation.js` implements geocoding, OSRM routing, route matching, next-turn/ETA display and voice/reroute state. `app.js` manages the existing display, GPS tracking, trip and map. `sw.js` caches app-shell files only.

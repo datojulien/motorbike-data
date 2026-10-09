@@ -1,6 +1,6 @@
 /* Offline application shell. Map tiles are deliberately not cached or prefetched by the service worker. */
-const CACHE = 'mt25-ride-shell-v1';
-const SHELL = ['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE = 'mt25-ride-shell-v2';
+const SHELL = ['./','./index.html','./styles.css','./app.js','./navigation.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
