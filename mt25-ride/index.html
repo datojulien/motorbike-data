@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080f17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MT-25 Ride">
+  <meta name="description" content="A personal motorcycle GPS dashboard for iPhone 13.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>MT-25 RIDE · Motorcycle Dashboard</title>
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-location" viewBox="0 0 24 24"><path d="m12 22 8-19-8 4-8-4 8 19z"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><path d="M9 19h7a4 4 0 0 0 0-8h-6a4 4 0 0 1 0-8h5"/><path d="m13 1 3 2-3 2"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M5 17a9 9 0 1 1 14 0"/><path d="m12 14 4-6"/><circle cx="12" cy="14" r="1.4"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 16.2A9 9 0 0 1 7.8 4a9 9 0 1 0 12.2 12.2z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+    <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="20" r="1"/></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+  </svg>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand" aria-label="MT-25 Ride">
+        <div class="brand-badge"><span>MT</span><strong>25</strong></div>
+        <div class="brand-copy"><div class="brand-title">RIDE<span class="brand-accent">/</span>OS</div><div class="brand-subtitle">PERSONAL MOTORCYCLE DISPLAY</div></div>
+      </div>
+      <div class="top-center"><span class="pill-status" id="gps-pill"><span class="dot dot-muted"></span><span id="gps-pill-text">GPS NOT STARTED</span></span><span class="demo-pill" id="demo-badge" hidden>SIMULATION</span></div>
+      <div class="top-right"><span class="clock" id="clock">--:--</span><button class="icon-btn" id="theme-btn" aria-label="Toggle day or night mode" title="Day / night"><svg><use href="#i-sun"/></svg></button><button class="icon-btn" id="settings-btn" aria-label="Open settings" title="Settings"><svg><use href="#i-cog"/></svg></button></div>
+    </header>
+
+    <main class="dashboard">
+      <section class="speed-panel" aria-label="Instrument panel">
+        <div class="panel-heading"><span>01 <em>/</em> INSTRUMENTS</span><span class="heading-cardinal" id="heading-label">––</span></div>
+        <div class="speed-hub">
+          <svg id="speed-ring" class="speed-ring" viewBox="0 0 320 174" aria-hidden="true">
+            <path class="ring-track" d="M 31 156 A 129 129 0 0 1 289 156"/>
+            <path id="ring-value" class="ring-value" d="M 31 156 A 129 129 0 0 1 289 156"/>
+            <g class="ring-ticks" id="ring-ticks"></g>
+          </svg>
+          <div class="speed-content"><div class="speed-pretitle">GROUND SPEED</div><div class="speed-value" id="speed-number">--</div><div class="speed-unit">km<span>/</span>h</div></div>
+          <div class="speed-scale"><span>0</span><span>80</span><span>160</span></div>
+        </div>
+        <div class="trip-stats">
+          <div class="stat"><span class="stat-label">TRIP DISTANCE</span><div class="stat-value"><span id="trip-distance">0.0</span><small>km</small></div></div>
+          <div class="stat"><span class="stat-label">RIDE TIME</span><div class="stat-value"><span id="trip-time">00:00</span></div></div>
+          <div class="stat"><span class="stat-label">AVG SPEED</span><div class="stat-value"><span id="trip-average">0</span><small>km/h</small></div></div>
+          <div class="stat"><span class="stat-label">TOP SPEED</span><div class="stat-value"><span id="trip-max">0</span><small>km/h</small></div></div>
+        </div>
+        <div class="gps-detail"><span id="position-status">Location permission required</span><span id="gps-accuracy">ACCURACY —</span></div>
+      </section>
+
+      <section class="map-panel" aria-label="Live map">
+        <div class="map-area" id="map-area">
+          <div class="map-tiles" id="map-tiles"></div>
+          <svg class="map-route" id="route-overlay" aria-hidden="true"></svg>
+          <div class="map-marker" id="map-marker" hidden><div class="marker-glow"></div><div class="marker-arrow" id="marker-arrow"><svg><use href="#i-location"/></svg></div></div>
+          <div class="map-scrim"></div>
+          <div class="map-top"><span class="map-eyebrow"><span class="live-dot"></span> LIVE MAP <span class="map-light">/ OPENSTREETMAP</span></span><span class="map-coordinates" id="coords-text">WAITING FOR LOCATION</span></div>
+          <div class="map-actions"><button class="map-control" id="zoom-in" aria-label="Zoom in">+</button><button class="map-control" id="zoom-out" aria-label="Zoom out">−</button><button class="map-control" id="recenter" aria-label="Center map on current position" title="Center on position"><svg><use href="#i-crosshair"/></svg></button></div>
+          <div class="map-empty" id="map-empty"><div class="map-empty-icon"><svg><use href="#i-pin"/></svg></div><strong>READY FOR THE ROAD</strong><span>Start your ride to activate live GPS tracking</span></div>
+          <div class="map-bottom"><div class="map-connection"><span class="connection-point"></span><span id="map-message">MAP REQUIRES INTERNET</span></div><span class="osm-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="bottom-bar">
+      <div class="ride-control"><button id="ride-btn" class="ride-btn"><svg><use href="#i-play"/></svg><span id="ride-btn-text">START RIDE</span></button><span class="ride-hint" id="ride-hint">GPS-BASED RECORDING</span></div>
+      <nav class="dock" aria-label="Dashboard actions">
+        <button class="dock-btn" id="nav-btn"><svg><use href="#i-route"/></svg><span>NAVIGATE</span></button>
+        <button class="dock-btn" id="music-btn"><svg><use href="#i-music"/></svg><span>MUSIC</span></button>
+        <button class="dock-btn" id="trips-btn"><svg><use href="#i-gauge"/></svg><span>MY TRIP</span></button>
+      </nav>
+      <div class="bottom-note"><span class="bottom-note-top">YAMAHA MT-25</span><span class="bottom-note-small">iPHONE 13 EDITION <span class="edition-mark">●</span> 1.0</span></div>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden><section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><span class="modal-kicker" id="modal-kicker">RIDE / OS</span><button id="modal-close" class="icon-btn" aria-label="Close"><svg><use href="#i-x"/></svg></button></div><h2 id="modal-title">Dashboard</h2><div id="modal-body" class="modal-body"></div></section></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

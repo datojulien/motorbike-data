@@ -1,0 +1,37 @@
+name: MT-25 Ride Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mt25-ride/**'
+      - '.github/workflows/mt25-ride-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: mt25-ride-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload MT-25 Ride only
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./mt25-ride
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
