@@ -1,13 +1,17 @@
-# MT-25 Ride v2 — Turn-by-turn Motorcycle Navigator
+# MT-25 Ride v3 — Full-screen Motorcycle Navigator
 
 An installable, landscape-first GPS dashboard for an **iPhone 13** on a Yamaha MT-25. Plain HTML, CSS and JavaScript; no account, database, app store or paid API key.
 
 **Live address:** https://datojulien.github.io/motorbike-data/
 
+The map fills the screen while navigating; the trip computer continues running *inside this open page*, not in iOS background execution.
+
 The app is in `datojulien/motorbike-data/mt25-ride/`. GitHub Actions (`.github/workflows/mt25-ride-pages.yml`) publishes *only* this directory to the GitHub Pages root, preserving unrelated motorcycle fuel/maintenance files.
 
-## What's new in v2
+## What's new in v3
 
+- **Full-screen navigation by default**: selecting a destination expands the live map edge-to-edge and leaves the instrument panel and dock hidden. The turn banner, route and ETA remain visible. **DASHBOARD** returns to the split view without interrupting navigation; **FULL MAP** brings it back.
+- **Automatic trip recording** when a destination is selected. The speedometer, distance, duration, average and peak speed continue to update in the same foreground web app while hidden. Tap **TRIP** to inspect or pause the log without leaving full-screen navigation.
 - **In-dashboard turn-by-turn navigation**: search for a place (explicit search; no background autocomplete), choose a result, or enter `latitude, longitude`.
 - **Hold the map for 650 ms** to pin a destination; a confirmation appears.
 - Blue/cyan **route polyline** over the existing OpenStreetMap map, destination flag, next-turn arrow, remaining metres, road name, distance remaining and ETA.
@@ -24,7 +28,7 @@ The app is in `datojulien/motorbike-data/mt25-ride/`. GitHub Actions (`.github/w
 2. **Share → Add to Home Screen**, then open **MT-25 Ride** from your Home Screen.
 3. Disable **Portrait Orientation Lock** if you want the dashboard in landscape. Give **Precise Location** permission.
 4. With the motorcycle stationary, tap **NAVIGATE**. Search e.g. `Putrajaya Sentral`, tap a result, wait for the route, then tap the voice button to test Bluetooth audio.
-5. Tap **START RIDE** separately if you also want to record the trip and export GPX/CSV.
+5. Trip recording starts automatically when you select a destination. The fullscreen **TRIP** button shows the live log and a pause/resume control; **DASHBOARD** switches back without ending directions. You can still start or pause rides manually from the dashboard, and export GPX/CSV via **MY TRIP**.
 6. To leave navigation, tap the **×** on the instructions or **NAVIGATE → END NAVIGATION**. This does **not** erase your recorded ride.
 
 ## Routing and search services — read before riding

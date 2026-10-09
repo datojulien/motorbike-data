@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MT-25 Ride">
-  <meta name="description" content="A personal motorcycle GPS dashboard for iPhone 13.">
+  <meta name="description" content="Full-screen motorcycle navigation with automatic GPS trip recording for iPhone 13.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
@@ -76,7 +76,26 @@
           <div class="nav-guidance" id="nav-guidance" hidden aria-live="off">
             <div class="nav-maneuver"><span class="nav-arrow" id="nav-arrow">↱</span><span class="nav-next-distance" id="nav-distance">—</span></div>
             <div class="nav-words"><div class="nav-command" id="nav-instruction">Calculating directions…</div><div class="nav-destination" id="nav-road">—</div><div class="nav-arrival" id="nav-eta">—</div></div>
-            <div class="nav-actions"><button class="nav-small-button" id="nav-voice" aria-label="Mute navigation voice">🔊</button><button class="nav-small-button stop" id="nav-end" aria-label="Stop navigation">×</button></div>
+            <div class="nav-actions"><button class="nav-small-button" id="nav-expand" aria-label="Open full-screen navigation" title="Full-screen map">⛶</button><button class="nav-small-button" id="nav-voice" aria-label="Mute navigation voice">🔊</button><button class="nav-small-button stop" id="nav-end" aria-label="Stop navigation">×</button></div>
+          </div>
+          <div class="nav-view-controls" id="nav-view-controls" hidden>
+            <button class="nav-overlay-btn" id="nav-dashboard" type="button" aria-label="Return to dashboard">‹ DASHBOARD</button>
+            <button class="nav-overlay-btn" id="nav-route-menu" type="button" aria-label="Change or manage route">ROUTE</button>
+            <button class="nav-overlay-btn nav-trip-toggle" id="nav-trip-toggle" type="button" aria-expanded="false" aria-controls="nav-trip-panel">TRIP <span id="nav-record-indicator" aria-hidden="true">●</span></button>
+          </div>
+          <section class="nav-trip-panel" id="nav-trip-panel" hidden aria-label="Trip recording status">
+            <div class="nav-trip-heading"><strong>TRIP COMPUTER</strong><span id="nav-record-status">RECORDING</span></div>
+            <div class="nav-trip-grid">
+              <div><small>DISTANCE</small><strong id="nav-mini-distance">0.0 km</strong></div>
+              <div><small>DURATION</small><strong id="nav-mini-time">00:00</strong></div>
+              <div><small>SPEED</small><strong id="nav-mini-speed">-- km/h</strong></div>
+              <div><small>AVERAGE</small><strong id="nav-mini-average">0 km/h</strong></div>
+            </div>
+            <button type="button" class="nav-trip-record" id="nav-trip-record">PAUSE TRIP RECORDING</button>
+          </section>
+          <div class="nav-fullscreen-footer" id="nav-fullscreen-footer" hidden aria-label="Remaining route and ETA">
+            <div><small id="nav-footer-label">DESTINATION</small><strong id="nav-footer-route">CALCULATING ROUTE</strong></div>
+            <div class="nav-footer-eta"><small>ARRIVAL</small><strong id="nav-footer-eta">—</strong></div>
           </div>
           <div class="map-top"><span class="map-eyebrow"><span class="live-dot"></span> LIVE MAP <span class="map-light">/ OPENSTREETMAP</span></span><span class="map-coordinates" id="coords-text">WAITING FOR LOCATION</span></div>
           <div class="map-actions"><button class="map-control" id="zoom-in" aria-label="Zoom in">+</button><button class="map-control" id="zoom-out" aria-label="Zoom out">−</button><button class="map-control" id="recenter" aria-label="Center map on current position" title="Center on position"><svg><use href="#i-crosshair"/></svg></button></div>
@@ -93,7 +112,7 @@
         <button class="dock-btn" id="music-btn"><svg><use href="#i-music"/></svg><span>MUSIC</span></button>
         <button class="dock-btn" id="trips-btn"><svg><use href="#i-gauge"/></svg><span>MY TRIP</span></button>
       </nav>
-      <div class="bottom-note"><span class="bottom-note-top">YAMAHA MT-25</span><span class="bottom-note-small">iPHONE 13 EDITION <span class="edition-mark">●</span> 2.0</span></div>
+      <div class="bottom-note"><span class="bottom-note-top">YAMAHA MT-25</span><span class="bottom-note-small">iPHONE 13 EDITION <span class="edition-mark">●</span> 3.0</span></div>
     </footer>
   </div>
 

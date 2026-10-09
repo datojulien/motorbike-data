@@ -1,4 +1,4 @@
-/* MT-25 Ride · v2.0 — self-contained motorcycle trip computer (no backend). */
+/* MT-25 Ride · v3.0 — full-screen navigation with foreground trip computer. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -53,6 +53,30 @@
   let routeRefreshAt = 0;
   let navigation = null;
   let startNewSegment = false;
+  let navFullscreen = false;
+  let tripOverlayOpen = false;
+
+  // This is a view change within the SAME foreground web app, not iOS background execution.
+  function setNavigationView(fullscreen){
+    navFullscreen=!!fullscreen && !!navigation?.getState().active;
+    document.documentElement.classList.toggle('navigation-fullscreen',navFullscreen);
+    $('nav-view-controls').hidden=!navFullscreen;
+    $('nav-fullscreen-footer').hidden=!navFullscreen;
+    $('nav-expand').hidden=navFullscreen;
+    if(!navFullscreen){tripOverlayOpen=false;$('nav-trip-panel').hidden=true;}
+    $('nav-trip-toggle').setAttribute('aria-expanded',String(tripOverlayOpen));
+    // Switching to map-only changes its dimensions; redraw after layout completes.
+    requestAnimationFrame(()=>{if(navFullscreen){followPosition=true;mapZoom=Math.max(mapZoom,15);if(currentPosition)mapCenter={...currentPosition};}drawMap();});
+  }
+  function renderNavTrip(){
+    $('nav-mini-distance').textContent=`${n1(trip.distanceM/1000)} km`;
+    $('nav-mini-time').textContent=fmtTime(trip.elapsedS);
+    $('nav-mini-speed').textContent=Number.isFinite(currentSpeed)?`${Math.round(currentSpeed)} km/h`:'-- km/h';
+    $('nav-mini-average').textContent=`${trip.elapsedS>0?Math.round(trip.distanceM/1000/(trip.elapsedS/3600)):0} km/h`;
+    $('nav-record-status').textContent=rideActive?'RECORDING':'PAUSED';
+    $('nav-record-indicator').classList.toggle('paused',!rideActive);
+    $('nav-trip-record').textContent=rideActive?'PAUSE TRIP RECORDING':'RESUME TRIP RECORDING';
+  }
 
   function setTheme(next){
     theme=next==='day'?'day':'night';
@@ -106,6 +130,7 @@
     $('ride-btn-text').textContent=rideActive?'PAUSE RIDE':trip.elapsedS>0?'RESUME RIDE':'START RIDE';
     btn.querySelector('use').setAttribute('href',rideActive?'#i-pause':'#i-play');
     $('ride-hint').textContent=rideActive?'RECORDING GPS':'GPS-BASED RECORDING';
+    renderNavTrip();
   }
   function addTicks(){
     const el=$('ring-ticks'),cx=160,cy=156,r=130;
@@ -196,7 +221,7 @@
   }
   function startRide(){
     if(rideActive){
-      rideActive=false;trip.lastAccepted=null;saveTrip(true);releaseScreen();renderInstrument();toast('Ride paused. Trip saved on this iPhone.');return;
+      rideActive=false;trip.lastAccepted=null;saveTrip(true);if(!navigation?.getState().active)releaseScreen();renderInstrument();toast('Ride paused. Trip saved on this iPhone.');return;
     }
     if(!isDemo && !beginGPS())return;
     rideActive=true;trip.lastAccepted=null;startNewSegment=trip.points.length>0;lastTimerTick=Date.now();
@@ -389,7 +414,7 @@
     $('export-csv').addEventListener('click',exportCSV);
     $('reset-trip').addEventListener('click',()=>{
       if(!confirm('Reset trip distance, speed and route? This cannot be undone.'))return;
-      trip=makeTrip();lastSave=0;rideActive=false;currentSpeed=isDemo?64:currentSpeed;releaseScreen();saveTrip(true);drawMap();renderInstrument();closeModal();toast('Trip cleared.');
+      trip=makeTrip();lastSave=0;rideActive=false;currentSpeed=isDemo?64:currentSpeed;if(!navigation?.getState().active)releaseScreen();saveTrip(true);drawMap();renderInstrument();closeModal();toast('Trip cleared.');
     });
   }
   function settingsModal(){
@@ -404,9 +429,9 @@
       </div>
       <div class="modal-card"><strong>Privacy and connectivity</strong>
         <p class="muted-note">Trip recordings stay on this iPhone. The map uses OpenStreetMap, place search uses Photon, and routes use OSRM. Searching sends the search text; routing sends only the current point and selected destination to those services, not your trip history.</p>
-        <p class="muted-note">GPS needs permission and HTTPS. Foreground route guidance uses internet to plan or reroute. Tiles cannot be bulk-downloaded from OSM. Routing services are community demos: no service or traffic guarantee.</p>
+        <p class="muted-note">The full-screen map leaves the trip computer running inside this open web app, but iOS may suspend both when the phone is locked or another app is opened. GPS needs permission and HTTPS. Foreground route guidance uses internet to plan or reroute. Tiles cannot be bulk-downloaded from OSM. Routing services are community demos: no service or traffic guarantee.</p>
       </div>
-      <p class="muted-note">MT-25 Ride v2.0 · A GPS trip computer, not a vehicle diagnostic display. RPM, actual fuel level and gear position aren't available from the iPhone alone.</p>`);
+      <p class="muted-note">MT-25 Ride v3.0 · A GPS trip computer, not a vehicle diagnostic display. RPM, actual fuel level and gear position aren't available from the iPhone alone.</p>`);
     $('day-checkbox').addEventListener('change',e=>setTheme(e.target.checked?'day':'night'));
     $('demo-btn').addEventListener('click',()=>{closeModal();isDemo?endDemo():initializeDemo();});
   }
@@ -414,7 +439,17 @@
     $('theme-btn').addEventListener('click',()=>setTheme(theme==='night'?'day':'night'));
     $('settings-btn').addEventListener('click',settingsModal);
     $('ride-btn').addEventListener('click',startRide);
-    $('nav-btn').addEventListener('click',()=>navigation?.openPlanner());
+    $('nav-btn').addEventListener('click',()=>navigation?.getState().active?setNavigationView(true):navigation?.openPlanner());
+    $('nav-expand').addEventListener('click',()=>setNavigationView(true));
+    $('nav-dashboard').addEventListener('click',()=>setNavigationView(false));
+    $('nav-route-menu').addEventListener('click',()=>navigation?.openPlanner());
+    $('nav-trip-toggle').addEventListener('click',()=>{
+      tripOverlayOpen=!tripOverlayOpen;
+      $('nav-trip-panel').hidden=!tripOverlayOpen;
+      $('nav-trip-toggle').setAttribute('aria-expanded',String(tripOverlayOpen));
+      renderNavTrip();
+    });
+    $('nav-trip-record').addEventListener('click',startRide);
     $('music-btn').addEventListener('click',musicModal);
     $('trips-btn').addEventListener('click',tripModal);
     $('modal-close').addEventListener('click',closeModal);
@@ -432,7 +467,18 @@
     navigation=window.MT25Navigation.create({
       getPosition:()=>currentPosition,getAccuracy:()=>gpsAccuracy,getSpeed:()=>currentSpeed,
       beginGPS,isDemo:()=>isDemo,drawMap,showModal,closeModal,toast,
-      onNavState:active=>{if(active)holdScreen();else if(!rideActive)releaseScreen();}
+      onNavState:active=>{
+        if(active){
+          // Navigation automatically records the ride without requiring the dashboard to stay visible.
+          // If the rider later pauses manually, the trip stays paused until resumed.
+          if(!rideActive)startRide();
+          setNavigationView(true);
+          holdScreen();
+        }else{
+          setNavigationView(false);
+          if(!rideActive)releaseScreen();
+        }
+      }
     });
     setTheme(theme);clock();addTicks();initEvents();initMapInteractions();if(PREVIEW)document.documentElement.classList.add('preview-map');drawMap();
     renderInstrument();setInterval(tick,1000);

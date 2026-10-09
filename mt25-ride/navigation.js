@@ -1,4 +1,4 @@
-/* MT-25 Ride v2 — foreground turn-by-turn navigation.
+/* MT-25 Ride v3 — full-screen foreground turn-by-turn navigation.
  * Router: community OSRM public demo (experimental, non-critical use).
  * Geocoder: Photon demo (search only on explicit user request).
  * No tokens, user accounts, location uploads of recorded tracks, or offline tile scraping.
@@ -82,6 +82,7 @@
     let voiceEnabled=localStorage.getItem(VOICE_SETTING)!=='off';
     let lastSpoken='', lastVoiceTime=0, routeNotice='';
     const navPane=$('nav-guidance');
+    const footerRoute=$('nav-footer-route'),footerETA=$('nav-footer-eta'),footerLabel=$('nav-footer-label');
     const canSpeak=()=>('speechSynthesis'in window)&&('SpeechSynthesisUtterance'in window);
     function speak(text,force=false){
       if(!voiceEnabled||!canSpeak()||document.hidden||!text)return;
@@ -101,22 +102,23 @@
       $('nav-btn').classList.toggle('nav-is-active',!!destination);
       $('nav-btn').querySelector('span').textContent=destination?'ROUTE ACTIVE':'NAVIGATE';
       $('map-area').classList.toggle('is-navigating',!!destination);
-      if(!destination)return;
+      if(!destination){footerRoute.textContent='NO ROUTE';footerETA.textContent='—';return;}
+      footerLabel.textContent=destination.label;
       const mute=$('nav-voice');mute.textContent=voiceEnabled?'🔊':'🔇';mute.setAttribute('aria-label',voiceEnabled?'Mute voice guidance':'Enable voice guidance');
       if(waitingForFix){
         $('nav-arrow').textContent='◎'; $('nav-distance').textContent='GPS';
         $('nav-instruction').textContent='Waiting for your location';
-        $('nav-road').textContent=destination.label;$('nav-eta').textContent='';return;
+        $('nav-road').textContent=destination.label;$('nav-eta').textContent='';footerRoute.textContent='GETTING GPS';footerETA.textContent='—';return;
       }
       if(fetching){
         $('nav-arrow').textContent='↻';$('nav-distance').textContent='ROUTE';
         $('nav-instruction').textContent='Calculating directions…';
-        $('nav-road').textContent=destination.label;$('nav-eta').textContent='';return;
+        $('nav-road').textContent=destination.label;$('nav-eta').textContent='';footerRoute.textContent='CALCULATING ROUTE';footerETA.textContent='—';return;
       }
       if(!route){
         $('nav-arrow').textContent='!';$('nav-distance').textContent='OFFLINE';
         $('nav-instruction').textContent=routeNotice||'Directions unavailable';
-        $('nav-road').textContent=destination.label;$('nav-eta').textContent='Try Waze / Maps';return;
+        $('nav-road').textContent=destination.label;$('nav-eta').textContent='Try Waze / Maps';footerRoute.textContent='ROUTE UNAVAILABLE';footerETA.textContent='—';return;
       }
       const next=nextManeuver();const remaining=Math.max(0,route.totalM-progress);
       $('nav-arrow').textContent=next?turnSymbol(next.step):'⚑';
@@ -125,8 +127,11 @@
       $('nav-road').textContent=destination.label;
       const seconds=(remaining/Math.max(route.totalM,1))*route.durationS;
       const eta=new Date(Date.now()+Math.max(0,seconds)*1000);
-      $('nav-eta').textContent=`${routeDistance(remaining)} left · ETA ${eta.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
-      if(routeNotice)$('nav-eta').textContent=routeNotice+' · '+$('nav-eta').textContent;
+      const arrival=eta.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      $('nav-eta').textContent=`${routeDistance(remaining)} left · ETA ${arrival}`;
+      footerRoute.textContent=`${routeDistance(remaining)} REMAINING`;
+      footerETA.textContent=arrival;
+      if(routeNotice){$('nav-eta').textContent=routeNotice+' · '+$('nav-eta').textContent;footerRoute.textContent=routeNotice;}
     }
     function nextManeuver(){
       if(!route)return null;
@@ -290,7 +295,7 @@
     }
     function openNewDestination(){
       showModal('Where to?','TURN-BY-TURN / ROUTE PLANNER',`
-        <p>Search for a destination before setting off. Turn-by-turn directions will appear inside your dashboard.</p>
+        <p>Search while parked. Once you choose a destination the map becomes full-screen, and the GPS trip computer records in the same open app.</p>
         <label class="modal-label" for="destination">PLACE OR LATITUDE, LONGITUDE</label>
         <div class="nav-search-row"><input id="destination" class="modal-input" type="search" placeholder="e.g. Putrajaya Sentral" autocomplete="off" maxlength="160"><button class="action-btn primary" id="place-search">SEARCH</button></div>
         <div class="place-results" id="place-results" aria-live="polite"></div>
